@@ -386,7 +386,8 @@ function generateAlertEmailHTML(alertData) {
 
       <div style="text-align: center;">
         <a href="${
-          process.env.FRONTEND_URL || "http://localhost:5173"
+          process.env.FRONTEND_URL ||
+          "https://ipal-monitoring-teklingundip.vercel.app"
         }/alerts" class="cta-button">
           🖥️ Lihat Detail di Dashboard
         </a>

@@ -428,8 +428,10 @@ async function createAlertsForViolations(readingId, ipalId, violations) {
 
 async function sendNotificationsForAlerts(alerts) {
   try {
-    // Check if notificationService exists
-    if (!notificationService) {
+    // Load notification service if not loaded
+    const notifService = getNotificationService();
+
+    if (!notifService) {
       console.warn("⚠️ notificationService not available");
       return;
     }
@@ -464,7 +466,7 @@ async function sendNotificationsForAlerts(alerts) {
     // 1. Get admin/manager emails from Firestore
     // 2. Send 1 email with ALL violations
     // 3. Send FCM (if tokens available)
-    const result = await getNotificationService().sendAlerts(alertsToSend);
+    const result = await notifService.sendAlerts(alertsToSend);
 
     if (result.success) {
       console.log("✅ Notifications sent successfully");
