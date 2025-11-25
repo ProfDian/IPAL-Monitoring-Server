@@ -25,6 +25,7 @@ const corsOptions = {
     "http://localhost:5173",
     "http://localhost:5174",
     "https://ipal-monitoring-teklingundip.vercel.app",
+    "http://ipal-monitoring-teklingundip-git-main-profdians-projects.vercel.app", // Preview deployment
     "https://*.vercel.app", // Allow all Vercel preview URLs
     process.env.FRONTEND_URL || "http://localhost:5173",
   ],
