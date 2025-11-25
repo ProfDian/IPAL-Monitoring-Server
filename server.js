@@ -21,14 +21,28 @@ const { requireAuth, requireAdmin } = require("./middleware/authMiddleware");
 // CORS CONFIGURATION
 // ========================================
 const corsOptions = {
-  origin: [
-    "http://localhost:5173",
-    "http://localhost:5174",
-    "https://ipal-monitoring-teklingundip.vercel.app",
-    "http://ipal-monitoring-teklingundip-git-main-profdians-projects.vercel.app", // Preview deployment
-    "https://*.vercel.app", // Allow all Vercel preview URLs
-    process.env.FRONTEND_URL || "http://localhost:5173",
-  ],
+  origin: function (origin, callback) {
+    // Allow requests with no origin (like mobile apps or Postman)
+    if (!origin) return callback(null, true);
+
+    const allowedOrigins = [
+      "http://localhost:5173",
+      "http://localhost:5174",
+      "https://ipal-monitoring-teklingundip.vercel.app",
+      process.env.FRONTEND_URL || "http://localhost:5173",
+    ];
+
+    // Allow all Vercel preview URLs (*.vercel.app)
+    if (
+      allowedOrigins.includes(origin) ||
+      origin.endsWith(".vercel.app") ||
+      origin.endsWith(".vercel.app/")
+    ) {
+      callback(null, true);
+    } else {
+      callback(new Error("Not allowed by CORS"));
+    }
+  },
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
   allowedHeaders: ["Content-Type", "Authorization"],
   exposedHeaders: ["Content-Disposition", "Content-Type"],
