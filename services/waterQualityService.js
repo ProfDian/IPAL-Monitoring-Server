@@ -73,6 +73,7 @@ const CONFIG = {
   MERGE_TIME_WINDOW: 5, // Minutes
   MAX_MERGE_ATTEMPTS: 3, // Max retry attempts
   ALERT_INCOMPLETE_AFTER: 10, // Minutes before alerting admin
+  ENABLE_DUMMY_OUTLET: process.env.ENABLE_DUMMY_OUTLET === "true", // 🎭 Expo demo mode
 };
 
 /**
@@ -130,6 +131,12 @@ async function submitReading(data) {
     });
 
     console.log(`✅ Buffer saved: ${bufferResult.buffer_id}`);
+
+    // 🎭 EXPO DEMO MODE: Auto-generate dummy outlet if enabled
+    if (CONFIG.ENABLE_DUMMY_OUTLET && location === "inlet") {
+      console.log("🎭 EXPO MODE: Generating dummy outlet data...");
+      await generateDummyOutlet(data);
+    }
 
     // Step 4: Try to merge with pair
     console.log("🔄 Attempting to merge...");
@@ -608,6 +615,153 @@ async function checkIncompleteReadings(ipalId) {
  */
 
 /**
+ * 🎭 DUMMY OUTLET GENERATOR (EXPO DEMO MODE)
+ * ========================================
+ * Generates intelligent dummy outlet data based on test scenarios
+ * Rotates between: normal, warning (1 alert), multiple alerts, critical
+ */
+
+// Counter untuk rotate scenarios
+let scenarioCounter = 0;
+
+/**
+ * Generate dummy outlet data when inlet is received
+ * @param {Object} inletData - Original inlet data with ipal_id, device_id, etc
+ */
+async function generateDummyOutlet(inletData) {
+  try {
+    console.log("🎭 Generating dummy outlet...");
+
+    // Determine which scenario to use (rotate)
+    const scenarios = ["normal", "warning", "multiple", "critical"];
+    const scenario = scenarios[scenarioCounter % scenarios.length];
+    scenarioCounter++;
+
+    console.log(`   Scenario ${scenarioCounter}: ${scenario}`);
+
+    // Generate outlet data based on scenario
+    const outletData = generateOutletByScenario(inletData.data, scenario);
+
+    // Create outlet buffer entry
+    const dummyOutletPayload = {
+      ipal_id: inletData.ipal_id,
+      location: "outlet",
+      device_id: "ESP32-OUTLET-DUMMY",
+      data: outletData,
+      sensor_mapping: {
+        outlet_ph: "sensor-ph-outlet-dummy",
+        outlet_tds: "sensor-tds-outlet-dummy",
+        outlet_turbidity: "sensor-turb-outlet-dummy",
+        outlet_temperature: "sensor-temp-outlet-dummy",
+      },
+    };
+
+    console.log("   Generated outlet:", outletData);
+
+    // Save to buffer (will trigger merge)
+    await getWaterQualityModel().saveToBuffer(dummyOutletPayload);
+
+    console.log("✅ Dummy outlet saved to buffer");
+  } catch (error) {
+    console.error("❌ Error generating dummy outlet:", error);
+    // Don't throw - this shouldn't block inlet processing
+  }
+}
+
+/**
+ * Generate outlet data based on scenario
+ * @param {Object} inlet - Inlet sensor data
+ * @param {String} scenario - normal | warning | multiple | critical
+ * @returns {Object} Outlet sensor data
+ */
+function generateOutletByScenario(inlet, scenario) {
+  const THRESHOLDS = {
+    ph: { min: 6.0, max: 9.0, optimal_min: 6.5, optimal_max: 8.5 },
+    tds: { max: 500, optimal_max: 300 },
+    turbidity: { max: 25, optimal_max: 5 },
+    temperature: { min: 20, max: 30, optimal_min: 25, optimal_max: 28 },
+  };
+
+  let outlet = {};
+
+  switch (scenario) {
+    case "normal":
+      // ✅ ALL PARAMETERS IN OPTIMAL RANGE (No alerts)
+      outlet = {
+        ph: randomInRange(6.8, 8.2), // Well within optimal
+        tds: randomInRange(150, 280), // Below optimal max
+        turbidity: randomInRange(1, 4), // Low turbidity
+        temperature: randomInRange(25.5, 27.5), // Optimal temp
+      };
+      console.log("   ✅ Normal: No violations expected");
+      break;
+
+    case "warning":
+      // ⚠️ ONE PARAMETER SLIGHTLY OVER (1 alert - low/medium severity)
+      outlet = {
+        ph: randomInRange(6.8, 8.2),
+        tds: randomInRange(320, 380), // Slightly over optimal (320-500)
+        turbidity: randomInRange(2, 4),
+        temperature: randomInRange(25.5, 27.5),
+      };
+      console.log("   ⚠️ Warning: 1 alert expected (TDS medium)");
+      break;
+
+    case "multiple":
+      // 🔶 MULTIPLE PARAMETERS OVER (2-3 alerts - medium/high severity)
+      outlet = {
+        ph: randomInRange(8.6, 8.9), // Near max but not critical
+        tds: randomInRange(420, 480), // High but under max
+        turbidity: randomInRange(18, 24), // Near max
+        temperature: randomInRange(25.5, 27.5), // Keep this normal
+      };
+      console.log("   🔶 Multiple: 3 alerts expected (pH, TDS, Turbidity)");
+      break;
+
+    case "critical":
+      // 🚨 CRITICAL VIOLATIONS (3+ alerts - high/critical severity)
+      outlet = {
+        ph: randomInRange(5.2, 5.8), // Below minimum (critical)
+        tds: randomInRange(550, 650), // Over maximum (critical)
+        turbidity: randomInRange(28, 35), // Over maximum (high)
+        temperature: randomInRange(32, 35), // Over maximum (medium)
+      };
+      console.log("   🚨 Critical: 4 alerts expected (ALL parameters)");
+      break;
+
+    default:
+      // Fallback to normal
+      outlet = {
+        ph: randomInRange(6.8, 8.2),
+        tds: randomInRange(150, 280),
+        turbidity: randomInRange(1, 4),
+        temperature: randomInRange(25.5, 27.5),
+      };
+  }
+
+  // Round values to realistic precision
+  outlet.ph = parseFloat(outlet.ph.toFixed(2));
+  outlet.tds = parseFloat(outlet.tds.toFixed(1));
+  outlet.turbidity = parseFloat(outlet.turbidity.toFixed(1));
+  outlet.temperature = parseFloat(outlet.temperature.toFixed(1));
+
+  return outlet;
+}
+
+/**
+ * Helper: Generate random number in range
+ */
+function randomInRange(min, max) {
+  return Math.random() * (max - min) + min;
+}
+
+/**
+ * ========================================
+ * SENSOR UPDATE FUNCTIONS
+ * ========================================
+ */
+
+/**
  * Update sensors dengan latest readings dari water_quality_readings
  * @param {string} readingId - ID of water_quality_readings document
  * @param {Object} sensor_mapping - Mapping of sensor IDs
@@ -753,6 +907,9 @@ module.exports = {
 
   // Sensor update (NEW!)
   updateSensorsFromReading,
+
+  // 🎭 Dummy generator (EXPO MODE)
+  generateDummyOutlet,
 
   // Monitoring & debugging
   getBufferStatus,
