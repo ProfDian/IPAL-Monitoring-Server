@@ -92,11 +92,18 @@ app.delete("/api/cache/clear", requireAuth, requireAdmin, (req, res) => {
 // HEALTH CHECK
 // ========================================
 app.get("/", (req, res) => {
-  res.json({
+  const response = {
     message: "IPAL Monitoring API is running",
     version: "1.0.0",
     timestamp: new Date().toISOString(),
-  });
+  };
+
+  // 🎭 EXPO GIMMICK MODE
+  if (process.env.ENABLE_DUMMY_OUTLET === "true") {
+    response.expo_mode = "🎭 EXPO GIMMICK MODE ACTIVE - YAHAHAHAHA FML KYS";
+  }
+
+  res.json(response);
 });
 
 // ========================================
