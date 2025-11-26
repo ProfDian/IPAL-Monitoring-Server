@@ -649,10 +649,10 @@ async function generateDummyOutlet(inletData) {
       device_id: "ESP32-OUTLET-002",
       data: outletData,
       sensor_mapping: {
-        outlet_ph: "sensor-ph-outlet-001",
-        outlet_tds: "sensor-tds-outlet-002",
-        outlet_turbidity: "sensor-turb-outlet-003",
-        outlet_temperature: "sensor-temp-outlet-004",
+        outlet_ph: "sensor-ph-outlet-005",
+        outlet_tds: "sensor-tds-outlet-006",
+        outlet_turbidity: "sensor-turb-outlet-007",
+        outlet_temperature: "sensor-temp-outlet-008",
       },
     };
 
