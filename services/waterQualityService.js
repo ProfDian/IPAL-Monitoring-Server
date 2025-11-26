@@ -663,68 +663,12 @@ async function generateDummyOutlet(inletData) {
       dummyOutletPayload
     );
 
-    console.log("✅ Dummy outlet saved to buffer");
-
-    // 🆕 UPDATE SENSOR latest_reading FIELDS
-    // This ensures sensor page shows correct data even for dummy outlet
-    if (bufferResult.success && bufferResult.buffer_id) {
-      try {
-        console.log("📊 Updating outlet sensor latest_reading fields...");
-
-        const { admin } = require("../config/firebase-config");
-        const timestamp = admin.firestore.Timestamp.now();
-
-        // Prepare sensor updates
-        const sensorUpdates = [
-          {
-            sensorId: dummyOutletPayload.sensor_mapping.outlet_ph,
-            readingData: {
-              value: outletData.ph,
-              timestamp: timestamp,
-              reading_id: bufferResult.buffer_id,
-              status: "normal",
-            },
-          },
-          {
-            sensorId: dummyOutletPayload.sensor_mapping.outlet_tds,
-            readingData: {
-              value: outletData.tds,
-              timestamp: timestamp,
-              reading_id: bufferResult.buffer_id,
-              status: "normal",
-            },
-          },
-          {
-            sensorId: dummyOutletPayload.sensor_mapping.outlet_turbidity,
-            readingData: {
-              value: outletData.turbidity,
-              timestamp: timestamp,
-              reading_id: bufferResult.buffer_id,
-              status: "normal",
-            },
-          },
-          {
-            sensorId: dummyOutletPayload.sensor_mapping.outlet_temperature,
-            readingData: {
-              value: outletData.temperature,
-              timestamp: timestamp,
-              reading_id: bufferResult.buffer_id,
-              status: "normal",
-            },
-          },
-        ];
-
-        // Batch update sensors
-        await getSensorModel().batchUpdateSensorsReading(sensorUpdates);
-
-        console.log(
-          "✅ Outlet sensor latest_reading fields updated successfully"
-        );
-      } catch (sensorError) {
-        console.error("❌ Error updating outlet sensors:", sensorError);
-        // Don't throw - sensor update is optional
-      }
-    }
+    console.log(
+      `✅ Dummy outlet saved to buffer (ID: ${bufferResult.buffer_id})`
+    );
+    console.log(
+      "   ℹ️  Sensor latest_reading will be updated after merge in processCompleteReading()"
+    );
   } catch (error) {
     console.error("❌ Error generating dummy outlet:", error);
     // Don't throw - this shouldn't block inlet processing
@@ -840,6 +784,13 @@ async function updateSensorsFromReading(
   qualityStatus
 ) {
   try {
+    console.log("🔧 updateSensorsFromReading called with:");
+    console.log(`   readingId: ${readingId}`);
+    console.log(`   sensor_mapping:`, sensor_mapping);
+    console.log(`   inlet:`, inlet);
+    console.log(`   outlet:`, outlet);
+    console.log(`   qualityStatus: ${qualityStatus}`);
+
     if (!sensor_mapping || Object.keys(sensor_mapping).length === 0) {
       console.log("ℹ️  No sensor_mapping provided, skipping sensor update");
       return;
@@ -880,6 +831,7 @@ async function updateSensorsFromReading(
 
     // Parse inlet sensors
     if (inlet) {
+      console.log("📥 Processing inlet sensors...");
       const inletMapping = {
         inlet_ph: inlet.ph,
         inlet_tds: inlet.tds,
@@ -889,6 +841,7 @@ async function updateSensorsFromReading(
 
       for (const [key, value] of Object.entries(inletMapping)) {
         const sensorId = sensor_mapping[key];
+        console.log(`   ${key}: ${value} → sensor: ${sensorId}`);
         if (sensorId && value !== null && value !== undefined) {
           sensorsToUpdate.push({
             sensorId: sensorId,
@@ -905,6 +858,7 @@ async function updateSensorsFromReading(
 
     // Parse outlet sensors
     if (outlet) {
+      console.log("📤 Processing outlet sensors...");
       const outletMapping = {
         outlet_ph: outlet.ph,
         outlet_tds: outlet.tds,
@@ -914,6 +868,7 @@ async function updateSensorsFromReading(
 
       for (const [key, value] of Object.entries(outletMapping)) {
         const sensorId = sensor_mapping[key];
+        console.log(`   ${key}: ${value} → sensor: ${sensorId}`);
         if (sensorId && value !== null && value !== undefined) {
           sensorsToUpdate.push({
             sensorId: sensorId,
