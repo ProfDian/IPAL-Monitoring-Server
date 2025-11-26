@@ -659,7 +659,7 @@ async function generateDummyOutlet(inletData) {
     console.log("   Generated outlet:", outletData);
 
     // Save to buffer (will trigger merge)
-    const bufferId = await getWaterQualityModel().saveToBuffer(
+    const bufferResult = await getWaterQualityModel().saveToBuffer(
       dummyOutletPayload
     );
 
@@ -667,61 +667,63 @@ async function generateDummyOutlet(inletData) {
 
     // 🆕 UPDATE SENSOR latest_reading FIELDS
     // This ensures sensor page shows correct data even for dummy outlet
-    try {
-      console.log("📊 Updating outlet sensor latest_reading fields...");
+    if (bufferResult.success && bufferResult.buffer_id) {
+      try {
+        console.log("📊 Updating outlet sensor latest_reading fields...");
 
-      const { admin } = require("../config/firebase-config");
-      const timestamp = admin.firestore.Timestamp.now();
+        const { admin } = require("../config/firebase-config");
+        const timestamp = admin.firestore.Timestamp.now();
 
-      // Prepare sensor updates
-      const sensorUpdates = [
-        {
-          sensorId: dummyOutletPayload.sensor_mapping.outlet_ph,
-          readingData: {
-            value: outletData.ph,
-            timestamp: timestamp,
-            reading_id: bufferId,
-            status: "normal",
+        // Prepare sensor updates
+        const sensorUpdates = [
+          {
+            sensorId: dummyOutletPayload.sensor_mapping.outlet_ph,
+            readingData: {
+              value: outletData.ph,
+              timestamp: timestamp,
+              reading_id: bufferResult.buffer_id,
+              status: "normal",
+            },
           },
-        },
-        {
-          sensorId: dummyOutletPayload.sensor_mapping.outlet_tds,
-          readingData: {
-            value: outletData.tds,
-            timestamp: timestamp,
-            reading_id: bufferId,
-            status: "normal",
+          {
+            sensorId: dummyOutletPayload.sensor_mapping.outlet_tds,
+            readingData: {
+              value: outletData.tds,
+              timestamp: timestamp,
+              reading_id: bufferResult.buffer_id,
+              status: "normal",
+            },
           },
-        },
-        {
-          sensorId: dummyOutletPayload.sensor_mapping.outlet_turbidity,
-          readingData: {
-            value: outletData.turbidity,
-            timestamp: timestamp,
-            reading_id: bufferId,
-            status: "normal",
+          {
+            sensorId: dummyOutletPayload.sensor_mapping.outlet_turbidity,
+            readingData: {
+              value: outletData.turbidity,
+              timestamp: timestamp,
+              reading_id: bufferResult.buffer_id,
+              status: "normal",
+            },
           },
-        },
-        {
-          sensorId: dummyOutletPayload.sensor_mapping.outlet_temperature,
-          readingData: {
-            value: outletData.temperature,
-            timestamp: timestamp,
-            reading_id: bufferId,
-            status: "normal",
+          {
+            sensorId: dummyOutletPayload.sensor_mapping.outlet_temperature,
+            readingData: {
+              value: outletData.temperature,
+              timestamp: timestamp,
+              reading_id: bufferResult.buffer_id,
+              status: "normal",
+            },
           },
-        },
-      ];
+        ];
 
-      // Batch update sensors
-      await getSensorModel().batchUpdateSensorsReading(sensorUpdates);
+        // Batch update sensors
+        await getSensorModel().batchUpdateSensorsReading(sensorUpdates);
 
-      console.log(
-        "✅ Outlet sensor latest_reading fields updated successfully"
-      );
-    } catch (sensorError) {
-      console.error("❌ Error updating outlet sensors:", sensorError);
-      // Don't throw - sensor update is optional
+        console.log(
+          "✅ Outlet sensor latest_reading fields updated successfully"
+        );
+      } catch (sensorError) {
+        console.error("❌ Error updating outlet sensors:", sensorError);
+        // Don't throw - sensor update is optional
+      }
     }
   } catch (error) {
     console.error("❌ Error generating dummy outlet:", error);
