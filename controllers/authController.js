@@ -136,7 +136,7 @@ exports.login = async (req, res) => {
         role: userData.role,
       },
       JWT_SECRET,
-      { expiresIn: "24h" }
+      { expiresIn: "6h" }
     );
 
     console.log("✅ Login successful for:", userData.email);
@@ -145,7 +145,7 @@ exports.login = async (req, res) => {
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      maxAge: 24 * 60 * 60 * 1000, // 24 hours
+      maxAge: 6 * 60 * 60 * 1000, // 6 hours
     });
 
     // Response
