@@ -12,7 +12,7 @@ const { admin, db } = require("./config/firebase-config");
 const USERS_TO_CREATE = [
   {
     email: "fattah.afr2@gmail.com",
-    password: "cerberus02",
+    password: "Cerberus02",
     role: "admin",
     username: "FattahAFR",
     // FCM token akan di-update via app nanti
