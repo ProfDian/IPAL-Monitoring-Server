@@ -105,27 +105,38 @@ exports.login = async (req, res) => {
     }
 
     // Ambil user data dari Firestore
+    console.log(
+      "🔍 Looking for user in Firestore with UID:",
+      firebaseUser.localId
+    );
+
     const userDoc = await db
       .collection("users")
       .doc(firebaseUser.localId)
       .get();
 
+    console.log("📄 Document exists:", userDoc.exists);
+
     let userData;
 
     if (!userDoc.exists) {
-      console.log("⚠️  User authenticated but no Firestore data. Creating...");
+      console.error("❌ User authenticated but not found in Firestore!");
+      console.error("   UID:", firebaseUser.localId);
+      console.error("   Email:", firebaseUser.email);
 
-      // Buat user baru di Firestore
-      userData = {
-        email: firebaseUser.email,
-        username: firebaseUser.email.split("@")[0],
-        role: "guest",
-        created_at: new Date().toISOString(),
-      };
-
-      await db.collection("users").doc(firebaseUser.localId).set(userData);
+      return res.status(403).json({
+        success: false,
+        message: "Account not authorized. Please contact administrator.",
+        details:
+          "User exists in Authentication but not in user database. Administrator must create your account first.",
+      });
     } else {
       userData = userDoc.data();
+      console.log("✅ User data found:", {
+        email: userData.email,
+        role: userData.role,
+        username: userData.username,
+      });
     }
 
     // Generate custom JWT token
