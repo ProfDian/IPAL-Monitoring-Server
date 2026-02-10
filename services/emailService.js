@@ -26,7 +26,7 @@ function initializeEmailService() {
   });
 
   // Verify connection
-  transporter.verify(function (error, success) {
+  transporter.verify(function (error) {
     if (error) {
       console.error("❌ Email service failed to initialize:", error.message);
     } else {
@@ -345,8 +345,8 @@ function generateAlertEmailHTML(alertData) {
             alertData.location === "inlet"
               ? "Inlet (Masuk)"
               : alertData.location === "outlet"
-              ? "Outlet (Keluar)"
-              : alertData.location
+                ? "Outlet (Keluar)"
+                : alertData.location
           }</td></tr>
           ${
             alertData.inlet_value !== null &&
@@ -388,7 +388,7 @@ function generateAlertEmailHTML(alertData) {
         <a href="${
           process.env.FRONTEND_URL ||
           "https://ipal-monitoring-teklingundip.vercel.app"
-        }/alerts" class="cta-button">
+        }/alerts?from=email" class="cta-button">
           🖥️ Lihat Detail di Dashboard
         </a>
       </div>
@@ -406,26 +406,6 @@ function generateAlertEmailHTML(alertData) {
 </body>
 </html>
   `;
-}
-
-/**
- * Send test email
- */
-async function sendTestEmail(recipient) {
-  const testAlert = {
-    ipal_id: 1,
-    parameter: "ph",
-    location: "outlet",
-    rule: "pH outlet melebihi batas maksimum",
-    message: "pH outlet (9.5) melebihi batas 9.0",
-    severity: "high",
-    inlet_value: 7.2,
-    outlet_value: 9.5,
-    threshold: 9.0,
-    timestamp: new Date(),
-  };
-
-  return await sendWaterQualityAlert(testAlert, [recipient]);
 }
 
 // ========================================
