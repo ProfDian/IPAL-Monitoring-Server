@@ -5,12 +5,17 @@
  * HTTP request handlers for water quality monitoring
  * Handles ESP32 data submission with buffer/merge system
  *
- * Routes:
+ * Active Routes:
  * - POST   /api/water-quality/submit          (ESP32 endpoint)
+ * - GET    /api/water-quality/health          (health check)
  * - GET    /api/water-quality/buffer-status   (monitoring)
+ * - GET    /api/water-quality/incomplete      (monitoring)
  * - DELETE /api/water-quality/cleanup-buffer  (maintenance)
- * - GET    /api/water-quality/readings        (get readings)
  * - GET    /api/water-quality/readings/:id    (get by ID)
+ *
+ * Deprecated/Removed:
+ * - /api/water-quality/readings → Use /api/sensors/readings
+ * - /api/water-quality/stats → Use /api/dashboard/summary/:ipal_id
  */
 
 // ⚡ Lazy load services to reduce cold start
@@ -56,7 +61,7 @@ exports.submitReading = async (req, res) => {
 
     console.log("📥 Received reading from ESP32");
     console.log(
-      `   IPAL: ${ipal_id}, Location: ${location}, Device: ${device_id}`
+      `   IPAL: ${ipal_id}, Location: ${location}, Device: ${device_id}`,
     );
 
     // Validate required fields
@@ -163,7 +168,7 @@ exports.getBufferStatus = async (req, res) => {
     console.log("📊 Getting buffer status...");
 
     const status = await getWaterQualityService().getBufferStatus(
-      ipal_id ? parseInt(ipal_id) : null
+      ipal_id ? parseInt(ipal_id) : null,
     );
 
     return res.status(200).json({
@@ -218,7 +223,7 @@ exports.checkIncompleteReadings = async (req, res) => {
     console.log("🔍 Checking for incomplete readings...");
 
     const result = await getWaterQualityService().checkIncompleteReadings(
-      ipal_id ? parseInt(ipal_id) : 1
+      ipal_id ? parseInt(ipal_id) : 1,
     );
 
     if (result.hasIncomplete) {
@@ -249,38 +254,9 @@ exports.checkIncompleteReadings = async (req, res) => {
  * ========================================
  * DATA RETRIEVAL ENDPOINTS
  * ========================================
+ * Note: getReadings, getLatestReading, getStats removed (unused)
+ * Use /api/sensors/readings and /api/dashboard endpoints instead
  */
-
-/**
- * GET /api/water-quality/readings
- * Get water quality readings with pagination
- * AUTH required
- */
-exports.getReadings = async (req, res) => {
-  try {
-    const { limit = 50, ipal_id } = req.query;
-
-    console.log(`📖 Getting readings (limit: ${limit})`);
-
-    const readings = await waterQualityModel.getLatestReadings(
-      parseInt(limit),
-      ipal_id ? parseInt(ipal_id) : null
-    );
-
-    return res.status(200).json({
-      success: true,
-      count: readings.length,
-      data: readings,
-    });
-  } catch (error) {
-    console.error("❌ Error getting readings:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to get readings",
-      error: error.message,
-    });
-  }
-};
 
 /**
  * GET /api/water-quality/readings/:id
@@ -311,120 +287,6 @@ exports.getReadingById = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to get reading",
-      error: error.message,
-    });
-  }
-};
-
-/**
- * GET /api/water-quality/readings/latest/:ipal_id
- * Get latest reading for specific IPAL
- * AUTH required
- */
-exports.getLatestReading = async (req, res) => {
-  try {
-    const { ipal_id } = req.params;
-
-    console.log(`📖 Getting latest reading for IPAL: ${ipal_id}`);
-
-    const readings = await getWaterQualityModel().getLatestReadings(
-      1,
-      parseInt(ipal_id)
-    );
-
-    if (readings.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "No readings found for this IPAL",
-      });
-    }
-
-    return res.status(200).json({
-      success: true,
-      data: readings[0],
-    });
-  } catch (error) {
-    console.error("❌ Error getting latest reading:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to get latest reading",
-      error: error.message,
-    });
-  }
-};
-
-/**
- * ========================================
- * STATISTICS ENDPOINTS (Optional)
- * ========================================
- */
-
-/**
- * GET /api/water-quality/stats
- * Get statistics summary (for dashboard)
- * AUTH required
- */
-exports.getStats = async (req, res) => {
-  try {
-    const { ipal_id = 1, days = 7 } = req.query;
-
-    console.log(`📊 Getting stats for last ${days} days`);
-
-    // Get recent readings
-    const readings = await getWaterQualityModel().getLatestReadings(
-      parseInt(days) * 24, // Assuming hourly readings
-      parseInt(ipal_id)
-    );
-
-    if (readings.length === 0) {
-      return res.status(404).json({
-        success: false,
-        message: "No data available",
-      });
-    }
-
-    // Calculate statistics
-    const stats = {
-      total_readings: readings.length,
-      average_quality_score: 0,
-      status_distribution: {
-        excellent: 0,
-        good: 0,
-        fair: 0,
-        poor: 0,
-        critical: 0,
-      },
-      total_alerts: 0,
-      latest_reading: readings[0],
-    };
-
-    let scoreSum = 0;
-    let alertSum = 0;
-
-    readings.forEach((reading) => {
-      if (reading.fuzzy_analysis) {
-        scoreSum += reading.fuzzy_analysis.quality_score || 0;
-        alertSum += reading.fuzzy_analysis.alert_count || 0;
-
-        const status = reading.fuzzy_analysis.status;
-        if (stats.status_distribution[status] !== undefined) {
-          stats.status_distribution[status]++;
-        }
-      }
-    });
-
-    stats.average_quality_score = Math.round(scoreSum / readings.length);
-    stats.total_alerts = alertSum;
-
-    return res.status(200).json({
-      success: true,
-      data: stats,
-    });
-  } catch (error) {
-    console.error("❌ Error getting stats:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Failed to get statistics",
       error: error.message,
     });
   }

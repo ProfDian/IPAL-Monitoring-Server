@@ -2,20 +2,25 @@
  * ========================================
  * FUZZY LOGIC SERVICE
  * ========================================
- * Wrapper for fuzzyLogicHelper with business logic
- * Provides water quality analysis using fuzzy logic
+ * Water quality analysis using threshold-based scoring
+ * Analyzes outlet quality AND inlet→outlet treatment efficiency
  *
- * Phase 1: Simple scoring (basic thresholds)
- * Phase 2: Advanced fuzzy logic (dapat di-upgrade nanti)
+ * Features:
+ * - Outlet quality scoring (pH, TDS, Turbidity, Temperature)
+ * - IPAL efficiency checks (reduction percentages)
+ * - Violation detection with severity levels
+ * - Recommendations generation
  */
 
-const fuzzyLogicHelper = require("../utils/fuzzyLogicHelper");
+// Note: fuzzyLogicHelper.js available for advanced fuzzy (Phase 2)
+// Currently using simple threshold-based scoring (Phase 1)
 
 /**
  * ========================================
  * BAKU MUTU THRESHOLDS
  * ========================================
- * Reference: Peraturan Menteri LHK (adjust sesuai kebutuhan)
+ * Reference: Peraturan Menteri LHK
+ * Synchronized with fuzzyLogicHelper.js thresholds
  */
 
 const THRESHOLDS = {
@@ -26,18 +31,23 @@ const THRESHOLDS = {
     optimal_max: 8.5,
   },
   tds: {
-    max: 500, // ppm
+    max: 500, // ppm (outlet baku mutu)
     optimal_max: 300,
+    inlet_max: 2000, // inlet bisa lebih tinggi
+    min_reduction: 0.15, // TDS harus turun min 15%
   },
   turbidity: {
-    max: 25, // NTU
+    max: 25, // NTU (outlet baku mutu)
     optimal_max: 5,
+    inlet_max: 400, // inlet bisa lebih tinggi
+    min_reduction: 0.5, // Turbidity harus turun min 50%
   },
   temperature: {
     min: 20, // °C
     max: 30,
     optimal_min: 25,
     optimal_max: 28,
+    max_difference: 3, // Perbedaan inlet-outlet max 3°C
   },
 };
 
@@ -59,11 +69,19 @@ async function analyze(inlet, outlet) {
     console.log("   Inlet:", inlet);
     console.log("   Outlet:", outlet);
 
-    // Phase 1: Simple scoring (basic thresholds)
-    // Nanti bisa di-upgrade ke advanced fuzzy logic
+    // Score based on outlet quality (baku mutu)
     const score = calculateSimpleScore(outlet);
     const status = determineStatus(score);
-    const violations = checkViolations(outlet);
+
+    // Check outlet violations (baku mutu)
+    const outletViolations = checkViolations(outlet);
+
+    // Check efficiency violations (inlet→outlet comparison)
+    const efficiencyViolations = checkEfficiencyViolations(inlet, outlet);
+
+    // Combine all violations
+    const violations = [...outletViolations, ...efficiencyViolations];
+
     const recommendations = generateRecommendations(violations, inlet, outlet);
 
     const result = {
@@ -72,19 +90,99 @@ async function analyze(inlet, outlet) {
       violations: violations,
       alert_count: violations.length,
       recommendations: recommendations,
-      analysis_method: "simple_threshold", // Phase 1
+      analysis_method: "threshold_with_efficiency",
+      efficiency: calculateEfficiency(inlet, outlet),
     };
 
     console.log("✅ Fuzzy analysis complete:");
     console.log(`   Score: ${score}/100`);
     console.log(`   Status: ${status}`);
-    console.log(`   Violations: ${violations.length}`);
+    console.log(
+      `   Violations: ${violations.length} (${outletViolations.length} outlet, ${efficiencyViolations.length} efficiency)`,
+    );
 
     return result;
   } catch (error) {
     console.error("❌ Error in fuzzy analysis:", error);
     throw error;
   }
+}
+
+/**
+ * Calculate IPAL treatment efficiency
+ */
+function calculateEfficiency(inlet, outlet) {
+  return {
+    tds_reduction:
+      inlet.tds > 0
+        ? (((inlet.tds - outlet.tds) / inlet.tds) * 100).toFixed(1) + "%"
+        : "N/A",
+    turbidity_reduction:
+      inlet.turbidity > 0
+        ? (
+            ((inlet.turbidity - outlet.turbidity) / inlet.turbidity) *
+            100
+          ).toFixed(1) + "%"
+        : "N/A",
+    ph_change: (outlet.ph - inlet.ph).toFixed(2),
+    temp_change: (outlet.temperature - inlet.temperature).toFixed(1) + "°C",
+  };
+}
+
+/**
+ * Check IPAL efficiency violations (inlet vs outlet)
+ */
+function checkEfficiencyViolations(inlet, outlet) {
+  const violations = [];
+
+  // Check TDS reduction (should reduce by at least 15%)
+  if (inlet.tds > 0) {
+    const tdsReduction = (inlet.tds - outlet.tds) / inlet.tds;
+    if (tdsReduction < THRESHOLDS.tds.min_reduction) {
+      violations.push({
+        parameter: "tds",
+        location: "efficiency",
+        value: (tdsReduction * 100).toFixed(1),
+        threshold: THRESHOLDS.tds.min_reduction * 100,
+        condition: "insufficient_reduction",
+        severity: tdsReduction < 0 ? "critical" : "high",
+        message: `Efisiensi TDS rendah (${(tdsReduction * 100).toFixed(1)}%). IPAL harus mengurangi TDS minimal ${THRESHOLDS.tds.min_reduction * 100}%`,
+      });
+    }
+  }
+
+  // Check Turbidity reduction (should reduce by at least 50%)
+  if (inlet.turbidity > 0) {
+    const turbReduction =
+      (inlet.turbidity - outlet.turbidity) / inlet.turbidity;
+    if (turbReduction < THRESHOLDS.turbidity.min_reduction) {
+      violations.push({
+        parameter: "turbidity",
+        location: "efficiency",
+        value: (turbReduction * 100).toFixed(1),
+        threshold: THRESHOLDS.turbidity.min_reduction * 100,
+        condition: "insufficient_reduction",
+        severity: turbReduction < 0 ? "critical" : "high",
+        message: `Efisiensi Turbidity rendah (${(turbReduction * 100).toFixed(1)}%). IPAL harus mengurangi Turbidity minimal ${THRESHOLDS.turbidity.min_reduction * 100}%`,
+      });
+    }
+  }
+
+  // Check Temperature difference (max 3°C)
+  const tempDiff = Math.abs(outlet.temperature - inlet.temperature);
+  if (tempDiff > THRESHOLDS.temperature.max_difference) {
+    violations.push({
+      parameter: "temperature",
+      location: "efficiency",
+      value: tempDiff.toFixed(1),
+      threshold: THRESHOLDS.temperature.max_difference,
+      condition: "excessive_change",
+      severity: tempDiff > 5 ? "high" : "medium",
+      message: `Perubahan suhu terlalu besar (${tempDiff.toFixed(1)}°C). Maksimal ${THRESHOLDS.temperature.max_difference}°C`,
+    });
+  }
+
+  return violations;
 }
 
 /**
@@ -314,7 +412,7 @@ function checkViolations(data) {
       condition: "above_maximum",
       severity: determineSeverity("turbidity", data.turbidity),
       message: `Turbidity outlet (${data.turbidity.toFixed(
-        1
+        1,
       )} NTU) melebihi batas aman (${THRESHOLDS.turbidity.max} NTU)`,
     });
   }
@@ -359,7 +457,7 @@ function determineSeverity(parameter, value) {
   if (parameter === "ph") {
     const deviation = Math.max(
       Math.abs(value - threshold.min),
-      Math.abs(value - threshold.max)
+      Math.abs(value - threshold.max),
     );
 
     if (deviation > 2.0) return "critical";
@@ -387,7 +485,7 @@ function determineSeverity(parameter, value) {
   if (parameter === "temperature") {
     const deviation = Math.max(
       Math.abs(value - threshold.min),
-      Math.abs(value - threshold.max)
+      Math.abs(value - threshold.max),
     );
 
     if (deviation > 10) return "critical";
@@ -505,28 +603,10 @@ function evaluateTreatmentEffectiveness(inlet, outlet) {
  * ========================================
  * ADVANCED FUZZY LOGIC (Phase 2 - Future)
  * ========================================
- * Uncomment and implement when ready for advanced fuzzy
+ * For advanced fuzzy membership functions,
+ * see: utils/fuzzyLogicHelper.js
+ * Can be integrated when needed for more sophisticated analysis.
  */
-
-/**
- * Advanced fuzzy logic analysis (Phase 2)
- * @param {Object} inlet
- * @param {Object} outlet
- * @returns {Object} Advanced fuzzy analysis
- */
-/*
-async function analyzeAdvancedFuzzy(inlet, outlet) {
-  // TODO: Implement advanced fuzzy logic
-  // 1. Fuzzification (membership functions)
-  // 2. Inference (fuzzy rules)
-  // 3. Defuzzification
-  
-  // Call fuzzyLogicHelper functions here
-  const fuzzyResult = await fuzzyLogicHelper.process(inlet, outlet);
-  
-  return fuzzyResult;
-}
-*/
 
 /**
  * ========================================
@@ -542,11 +622,14 @@ module.exports = {
   calculateSimpleScore,
   determineStatus,
   checkViolations,
+  checkEfficiencyViolations,
+  calculateEfficiency,
   determineSeverity,
   generateRecommendations,
+  evaluateTreatmentEffectiveness,
 
   // Thresholds (exported for reference)
   THRESHOLDS,
 };
 
-console.log("📦 fuzzyService loaded");
+console.log("📦 fuzzyService (with efficiency checks) loaded");

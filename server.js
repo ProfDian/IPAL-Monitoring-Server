@@ -173,17 +173,7 @@ app.use("/api/ipals", (req, res, next) => {
   require("./routes/ipalRoutes")(req, res, next);
 });
 
-// 10. Statistic routes (TODO: akan dibuat ulang)
-// console.log("📦 Loading statisticRoutes...");
-// const statisticRoutes = require("./routes/statisticRoutes");
-// app.use("/api/statistics", statisticRoutes);
-// console.log("✅ statisticRoutes loaded");
-
-// 10. Chart routes (TODO: akan dibuat ulang)
-// console.log("📦 Loading chartRoutes...");
-// const chartRoutes = require("./routes/chartRoutes");
-// app.use("/api/charts", chartRoutes);
-// console.log("✅ chartRoutes loaded");
+// Note: statisticRoutes and chartRoutes planned for future development
 
 // ========================================
 // TEST ENDPOINTS

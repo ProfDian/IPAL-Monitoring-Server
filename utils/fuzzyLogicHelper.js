@@ -3,6 +3,14 @@
  *
  * Aturan berdasarkan Baku Mutu Air Limbah Domestik
  * dan efektivitas IPAL
+ *
+ * NOTE: This file provides fuzzy membership functions for advanced analysis.
+ * Main analysis is handled by: services/fuzzyService.js
+ * THRESHOLDS here should be synchronized with fuzzyService.js
+ *
+ * Used by:
+ * - functions/triggers/readingTrigger.js (Firebase trigger)
+ * - test-fuzzy.js (testing)
  */
 
 // Baku mutu parameter (sesuaikan dengan regulasi)
@@ -163,7 +171,7 @@ function analyzeParameterChange(inlet, outlet, parameter) {
           location: "comparison",
           rule: "TDS tidak turun cukup",
           message: `TDS hanya turun ${tdsReduction.toFixed(
-            1
+            1,
           )}% (seharusnya min ${THRESHOLDS.tds.minReduction * 100}%)`,
           severity: "high",
           inlet_value: inlet,
@@ -199,7 +207,7 @@ function analyzeParameterChange(inlet, outlet, parameter) {
           location: "comparison",
           rule: "Turbidity tidak turun cukup",
           message: `Turbidity hanya turun ${turbidityReduction.toFixed(
-            1
+            1,
           )}% (seharusnya min ${THRESHOLDS.turbidity.minReduction * 100}%)`,
           severity: "high",
           inlet_value: inlet,
@@ -286,7 +294,7 @@ function analyzeFuzzy(inletData, outletData) {
     const paramAlerts = analyzeParameterChange(
       inletData[param],
       outletData[param],
-      param
+      param,
     );
     alerts.push(...paramAlerts);
   });

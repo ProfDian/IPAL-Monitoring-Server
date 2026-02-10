@@ -8,6 +8,7 @@
 
 const { admin, db } = require("../config/firebase-config");
 const { invalidateCache } = require("../middleware/cacheMiddleware");
+const cacheService = require("../services/cacheService");
 
 // ========================================
 // EXISTING FUNCTIONS (keep these)
@@ -42,14 +43,14 @@ exports.getReadings = async (req, res) => {
 
     if (start_date) {
       const startTimestamp = admin.firestore.Timestamp.fromDate(
-        new Date(start_date)
+        new Date(start_date),
       );
       query = query.where("timestamp", ">=", startTimestamp);
     }
 
     if (end_date) {
       const endTimestamp = admin.firestore.Timestamp.fromDate(
-        new Date(end_date)
+        new Date(end_date),
       );
       query = query.where("timestamp", "<=", endTimestamp);
     }
@@ -72,7 +73,7 @@ exports.getReadings = async (req, res) => {
     });
 
     console.log(
-      `✅ Returning ${readings.length} readings (${sortOrder} order)`
+      `✅ Returning ${readings.length} readings (${sortOrder} order)`,
     );
 
     return res.status(200).json({
@@ -210,8 +211,8 @@ exports.getAllSensors = async (req, res) => {
 
         console.log(
           `   Sensor ${doc.id}: ${minutesAgo.toFixed(
-            1
-          )}min ago → ${online_status}`
+            1,
+          )}min ago → ${online_status}`,
         );
       } else {
         console.log(`   Sensor ${doc.id}: NO last_updated_at → offline`);
@@ -250,10 +251,10 @@ exports.getAllSensors = async (req, res) => {
 
     // 🆕 COUNT ONLINE SENSORS
     const onlineCount = sensors.filter(
-      (s) => s.online_status === "online"
+      (s) => s.online_status === "online",
     ).length;
     console.log(
-      `   ${onlineCount} online, ${sensors.length - onlineCount} offline`
+      `   ${onlineCount} online, ${sensors.length - onlineCount} offline`,
     );
 
     return res.status(200).json({
@@ -274,7 +275,7 @@ exports.getAllSensors = async (req, res) => {
 };
 
 /**
- * GET SENSOR BY ID
+ * GET SENSOR BY ID (OPTIMIZED WITH CACHE)
  * Endpoint: GET /api/sensors/:id
  */
 exports.getSensorById = async (req, res) => {
@@ -283,22 +284,34 @@ exports.getSensorById = async (req, res) => {
 
     console.log(`🔍 Fetching sensor: ${id}`);
 
-    const doc = await db.collection("sensors").doc(id).get();
+    const cacheKey = cacheService.KEYS.SENSOR(id);
 
-    if (!doc.exists) {
+    const sensor = await cacheService.getCached(
+      cacheKey,
+      async () => {
+        const doc = await db.collection("sensors").doc(id).get();
+
+        if (!doc.exists) {
+          return null;
+        }
+
+        return {
+          id: doc.id,
+          ...doc.data(),
+          added_at: doc.data().added_at?.toDate
+            ? doc.data().added_at.toDate().toISOString()
+            : null,
+        };
+      },
+      600, // Cache for 10 minutes (metadata rarely changes)
+    );
+
+    if (!sensor) {
       return res.status(404).json({
         success: false,
         message: `Sensor with ID ${id} not found`,
       });
     }
-
-    const sensor = {
-      id: doc.id,
-      ...doc.data(),
-      added_at: doc.data().added_at?.toDate
-        ? doc.data().added_at.toDate().toISOString()
-        : null,
-    };
 
     console.log(`✅ Sensor found: ${id}`);
 
@@ -317,7 +330,7 @@ exports.getSensorById = async (req, res) => {
 };
 
 /**
- * UPDATE SENSOR
+ * UPDATE SENSOR (WITH CACHE INVALIDATION)
  * Endpoint: PUT /api/sensors/:id
  */
 exports.updateSensor = async (req, res) => {
@@ -329,7 +342,6 @@ exports.updateSensor = async (req, res) => {
 
     console.log(`✏️ Updating sensor: ${id} by ${user.email}`);
 
-    // Cek sensor exists
     const sensorRef = db.collection("sensors").doc(id);
     const sensorDoc = await sensorRef.get();
 
@@ -340,7 +352,6 @@ exports.updateSensor = async (req, res) => {
       });
     }
 
-    // Prepare update data (hanya field yang dikirim)
     const updateData = {
       updated_at: admin.firestore.FieldValue.serverTimestamp(),
       updated_by: user.email,
@@ -352,15 +363,17 @@ exports.updateSensor = async (req, res) => {
       updateData.sensor_description = sensor_description;
     if (status) updateData.status = status;
 
-    // Update sensor
     await sensorRef.update(updateData);
 
-    // ♻️ Invalidate related caches
+    // ✅ Invalidate both HTTP cache and cacheService cache
     invalidateCache(["/api/sensors", `/api/sensors/${id}`, "/api/dashboard"]);
+    cacheService.invalidate(cacheService.KEYS.SENSOR(id));
+    cacheService.invalidate(cacheService.KEYS.LATEST_READING(id));
+    cacheService.invalidatePattern(`history:${id}:*`);
+    cacheService.invalidatePattern("sensors:*");
 
-    console.log(`✅ Sensor updated: ${id}`);
+    console.log(`✅ Sensor updated: ${id} & cache invalidated`);
 
-    // Get updated sensor
     const updatedDoc = await sensorRef.get();
     const updatedSensor = {
       id: updatedDoc.id,
@@ -510,10 +523,9 @@ exports.getSensorsByIpal = async (req, res) => {
 };
 
 /**
- * GET LATEST READING BY SENSOR ID
+ * GET LATEST READING BY SENSOR ID (OPTIMIZED)
  * Endpoint: GET /api/sensors/:id/latest
- *
- * Query water_quality_readings untuk cari latest reading dari sensor ini
+ * ✅ OPTIMIZED: 1 query instead of 8-64 queries (using sensor metadata)
  */
 exports.getLatestReadingBySensor = async (req, res) => {
   try {
@@ -521,96 +533,98 @@ exports.getLatestReadingBySensor = async (req, res) => {
 
     console.log(`🔍 Fetching latest reading for sensor: ${id}`);
 
-    // 1. Get sensor metadata
-    const sensorDoc = await db.collection("sensors").doc(id).get();
+    // Try cache first (5 min TTL)
+    const cacheKey = cacheService.KEYS.LATEST_READING(id);
 
-    if (!sensorDoc.exists) {
+    const result = await cacheService.getCached(
+      cacheKey,
+      async () => {
+        // 1. Get sensor metadata (CACHED separately)
+        const sensorCacheKey = cacheService.KEYS.SENSOR(id);
+
+        const sensorDoc = await cacheService.getCached(
+          sensorCacheKey,
+          async () => {
+            const doc = await db.collection("sensors").doc(id).get();
+            if (!doc.exists) return null;
+            return { id: doc.id, ...doc.data() };
+          },
+          600, // 10 min TTL for sensor metadata
+        );
+
+        if (!sensorDoc) {
+          return null;
+        }
+
+        const sensorData = sensorDoc;
+
+        // 2. ✅ OPTIMIZATION: Build EXACT mapping field from sensor metadata
+        const location = sensorData.sensor_location; // inlet or outlet
+        const type = sensorData.sensor_type; // ph, tds, turbidity, temperature
+        const mappingField = `sensor_mapping.${location}_${type}`;
+
+        console.log(`   📌 Using mapping field: ${mappingField}`);
+
+        // 3. Single query instead of loop!
+        const snapshot = await db
+          .collection("water_quality_readings")
+          .where(mappingField, "==", id)
+          .orderBy("timestamp", "desc")
+          .limit(1) // Only need latest
+          .get();
+
+        if (snapshot.empty) {
+          return {
+            sensor: sensorData,
+            latest_reading: null,
+          };
+        }
+
+        // 4. Extract data
+        const readingDoc = snapshot.docs[0];
+        const latestReading = readingDoc.data();
+
+        const timestamp = latestReading.timestamp?.toDate
+          ? latestReading.timestamp.toDate().toISOString()
+          : null;
+
+        const sensorValue = latestReading[location]?.[type] || null;
+
+        return {
+          sensor: {
+            id: sensorDoc.id,
+            sensor_id: sensorData.sensor_id,
+            sensor_type: sensorData.sensor_type,
+            sensor_location: sensorData.sensor_location,
+            sensor_description: sensorData.sensor_description,
+            status: sensorData.status,
+            last_calibration: sensorData.last_calibration?.toDate
+              ? sensorData.last_calibration.toDate().toISOString()
+              : null,
+          },
+          latest_reading: {
+            value: sensorValue,
+            timestamp: timestamp,
+            reading_id: readingDoc.id,
+            full_reading: latestReading,
+          },
+        };
+      },
+      300,
+    ); // Cache for 5 minutes
+
+    if (!result) {
       return res.status(404).json({
         success: false,
         message: `Sensor with ID ${id} not found`,
       });
     }
 
-    const sensorData = sensorDoc.data();
-
-    // 2. Find latest reading for this sensor
-    // Check all possible sensor_mapping fields
-    const mappingFields = [
-      "sensor_mapping.inlet_ph",
-      "sensor_mapping.inlet_tds",
-      "sensor_mapping.inlet_turbidity",
-      "sensor_mapping.inlet_temperature",
-      "sensor_mapping.outlet_ph",
-      "sensor_mapping.outlet_tds",
-      "sensor_mapping.outlet_turbidity",
-      "sensor_mapping.outlet_temperature",
-    ];
-
-    let latestReading = null;
-    let readingDoc = null;
-
-    // Try each mapping field
-    for (const field of mappingFields) {
-      try {
-        const snapshot = await db
-          .collection("water_quality_readings")
-          .where(field, "==", id)
-          .orderBy("timestamp", "desc")
-          .limit(1)
-          .get();
-
-        if (!snapshot.empty) {
-          readingDoc = snapshot.docs[0];
-          latestReading = readingDoc.data();
-          break;
-        }
-      } catch (queryError) {
-        // Index might not exist yet, continue to next field
-        continue;
-      }
-    }
-
-    // 3. Extract specific value for this sensor
-    let sensorValue = null;
-    let timestamp = null;
-
-    if (latestReading) {
-      timestamp = latestReading.timestamp?.toDate
-        ? latestReading.timestamp.toDate().toISOString()
-        : null;
-
-      // Determine which field to extract based on sensor type & location
-      const location = sensorData.sensor_location; // inlet or outlet
-      const type = sensorData.sensor_type; // ph, tds, turbidity, temperature
-
-      if (latestReading[location]) {
-        sensorValue = latestReading[location][type];
-      }
-    }
-
     console.log(`✅ Latest reading found for sensor ${id}`);
 
     return res.status(200).json({
       success: true,
-      sensor: {
-        id: sensorDoc.id,
-        sensor_id: sensorData.sensor_id,
-        sensor_type: sensorData.sensor_type,
-        sensor_location: sensorData.sensor_location,
-        sensor_description: sensorData.sensor_description,
-        status: sensorData.status,
-        last_calibration: sensorData.last_calibration?.toDate
-          ? sensorData.last_calibration.toDate().toISOString()
-          : null,
-      },
-      latest_reading: latestReading
-        ? {
-            value: sensorValue,
-            timestamp: timestamp,
-            reading_id: readingDoc.id,
-            full_reading: latestReading, // Include full reading for context
-          }
-        : null,
+      ...result,
     });
   } catch (error) {
     console.error("💥 Error fetching latest reading:", error);
@@ -623,92 +637,107 @@ exports.getLatestReadingBySensor = async (req, res) => {
 };
 
 /**
- * GET SENSOR HISTORY
+ * GET SENSOR HISTORY (OPTIMIZED)
  * Endpoint: GET /api/sensors/:id/history?limit=100&start_date=...&end_date=...
- *
- * Get historical data untuk sensor tertentu
+ * ✅ OPTIMIZED: 1 query with cache instead of inefficient compound query
  */
 exports.getSensorHistory = async (req, res) => {
   try {
     const { id } = req.params;
     const { limit = 100, start_date, end_date } = req.query;
 
-    console.log(`📊 Fetching history for sensor: ${id}`);
+    // ✅ SAFETY: Enforce max limit
+    const safeLimit = Math.min(parseInt(limit), 500);
 
-    // 1. Get sensor metadata
-    const sensorDoc = await db.collection("sensors").doc(id).get();
+    console.log(`📊 Fetching history for sensor: ${id} (limit: ${safeLimit})`);
 
-    if (!sensorDoc.exists) {
+    // Cache key with limit
+    const cacheKey = cacheService.KEYS.SENSOR_HISTORY(id, safeLimit);
+
+    const result = await cacheService.getCached(
+      cacheKey,
+      async () => {
+        // 1. Get sensor metadata (CACHED)
+        const sensorCacheKey = cacheService.KEYS.SENSOR(id);
+
+        const sensorDoc = await cacheService.getCached(
+          sensorCacheKey,
+          async () => {
+            const doc = await db.collection("sensors").doc(id).get();
+            if (!doc.exists) return null;
+            return { id: doc.id, ...doc.data() };
+          },
+          600, // 10 min TTL
+        );
+
+        if (!sensorDoc) {
+          return null;
+        }
+
+        const sensorData = sensorDoc;
+        const location = sensorData.sensor_location;
+        const type = sensorData.sensor_type;
+        const mappingField = `sensor_mapping.${location}_${type}`;
+
+        console.log(`   📌 Using mapping field: ${mappingField}`);
+
+        // 2. ✅ OPTIMIZATION: Single query with proper ordering
+        let query = db
+          .collection("water_quality_readings")
+          .where(mappingField, "==", id)
+          .orderBy("timestamp", "desc")
+          .limit(safeLimit);
+
+        // Optional date filters (applied in JavaScript to avoid compound index)
+        const snapshot = await query.get();
+
+        // 3. Filter and extract data
+        let readings = [];
+
+        snapshot.forEach((doc) => {
+          const data = doc.data();
+          const timestamp = data.timestamp?.toDate();
+
+          // Apply date filters if provided
+          if (start_date && timestamp < new Date(start_date)) return;
+          if (end_date && timestamp > new Date(end_date + "T23:59:59Z")) return;
+
+          const value = data[location]?.[type];
+
+          readings.push({
+            reading_id: doc.id,
+            value: value,
+            timestamp: timestamp ? timestamp.toISOString() : null,
+          });
+        });
+
+        return {
+          sensor: {
+            id: sensorDoc.id,
+            sensor_type: sensorData.sensor_type,
+            sensor_location: sensorData.sensor_location,
+            sensor_description: sensorData.sensor_description,
+            status: sensorData.status,
+          },
+          count: readings.length,
+          history: readings,
+        };
+      },
+      180, // Cache for 3 minutes (shorter for history data)
+    );
+
+    if (!result) {
       return res.status(404).json({
         success: false,
         message: `Sensor with ID ${id} not found`,
       });
     }
 
-    const sensorData = sensorDoc.data();
-    const location = sensorData.sensor_location;
-    const type = sensorData.sensor_type;
-    const mappingField = `sensor_mapping.${location}_${type}`;
-
-    console.log(`   Mapping field: ${mappingField}`);
-
-    // 2. ✅ BUILD QUERY - Pakai orderBy dulu
-    let query = db
-      .collection("water_quality_readings")
-      .orderBy(mappingField, "asc") // ✅ Order by mapping field first
-      .orderBy("timestamp", "desc"); // ✅ Then by timestamp
-
-    // Apply limit
-    query = query.limit(parseInt(limit));
-
-    // 3. Execute query
-    const snapshot = await query.get();
-
-    // 4. ✅ FILTER di JavaScript (bukan di query)
-    let readings = [];
-
-    snapshot.forEach((doc) => {
-      const data = doc.data();
-
-      // Filter by sensor ID
-      if (data.sensor_mapping?.[`${location}_${type}`] !== id) {
-        return; // Skip this reading
-      }
-
-      // Filter by date range
-      const timestamp = data.timestamp?.toDate();
-      if (timestamp) {
-        if (start_date && timestamp < new Date(start_date)) {
-          return;
-        }
-        if (end_date && timestamp > new Date(end_date + "T23:59:59Z")) {
-          return;
-        }
-      }
-
-      // Extract value
-      const value = data[location]?.[type];
-
-      readings.push({
-        reading_id: doc.id,
-        value: value,
-        timestamp: timestamp ? timestamp.toISOString() : null,
-      });
-    });
-
-    console.log(`✅ Found ${readings.length} historical readings`);
+    console.log(`✅ Found ${result.count} historical readings`);
 
     return res.status(200).json({
       success: true,
-      sensor: {
-        id: sensorDoc.id,
-        sensor_type: sensorData.sensor_type,
-        sensor_location: sensorData.sensor_location,
-        sensor_description: sensorData.sensor_description,
-        status: sensorData.status,
-      },
-      count: readings.length,
-      history: readings,
+      ...result,
     });
   } catch (error) {
     console.error("💥 Error fetching sensor history:", error);
@@ -720,4 +749,4 @@ exports.getSensorHistory = async (req, res) => {
   }
 };
 
-console.log("📦 sensorController (extended) loaded");
+console.log("📦 sensorController (optimized) loaded");
