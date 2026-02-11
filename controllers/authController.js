@@ -17,7 +17,7 @@ const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY;
 // Debug
 console.log(
   "🔑 Firebase API Key loaded:",
-  FIREBASE_API_KEY ? "✅ Yes" : "❌ No"
+  FIREBASE_API_KEY ? "✅ Yes" : "❌ No",
 );
 console.log("🔑 JWT Secret loaded:", JWT_SECRET ? "✅ Yes" : "❌ No");
 
@@ -65,7 +65,7 @@ exports.login = async (req, res) => {
     } catch (authError) {
       console.error(
         "❌ Firebase Auth failed:",
-        authError.response?.data || authError.message
+        authError.response?.data || authError.message,
       );
 
       // Map Firebase error codes to user-friendly messages
@@ -107,7 +107,7 @@ exports.login = async (req, res) => {
     // Ambil user data dari Firestore
     console.log(
       "🔍 Looking for user in Firestore with UID:",
-      firebaseUser.localId
+      firebaseUser.localId,
     );
 
     const userDoc = await db
@@ -147,7 +147,7 @@ exports.login = async (req, res) => {
         role: userData.role,
       },
       JWT_SECRET,
-      { expiresIn: "6h" }
+      { expiresIn: "6h" },
     );
 
     console.log("✅ Login successful for:", userData.email);
@@ -169,6 +169,8 @@ exports.login = async (req, res) => {
         email: userData.email,
         username: userData.username,
         role: userData.role,
+        created_at: userData.created_at,
+        updated_at: userData.updated_at,
       },
     });
   } catch (error) {

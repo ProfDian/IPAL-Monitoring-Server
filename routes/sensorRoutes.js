@@ -3,7 +3,9 @@
  * SENSOR MANAGEMENT ROUTES (EXTENDED)
  * ========================================
  * Complete CRUD operations for sensors
- * Sesuai Use Case #4: Penambahan Sensor
+ * - GET: All authenticated users
+ * - POST/PUT: superadmin + admin
+ * - DELETE: superadmin only
  */
 
 const express = require("express");
@@ -12,8 +14,8 @@ const sensorController = require("../controllers/sensorController");
 const { cacheMiddleware } = require("../middleware/cacheMiddleware");
 const {
   requireAuth,
-  requireManager,
   requireAdmin,
+  requireSuperAdmin,
 } = require("../middleware/authMiddleware");
 
 // ========================================
@@ -29,7 +31,7 @@ router.get(
   "/readings",
   requireAuth,
   cacheMiddleware(45),
-  sensorController.getReadings
+  sensorController.getReadings,
 );
 
 /**
@@ -41,7 +43,7 @@ router.get(
   "/readings/latest/:ipal_id",
   requireAuth,
   cacheMiddleware(20),
-  sensorController.getLatestReading
+  sensorController.getLatestReading,
 );
 
 // ========================================
@@ -63,7 +65,7 @@ router.get(
   "/",
   requireAuth,
   cacheMiddleware(60),
-  sensorController.getAllSensors
+  sensorController.getAllSensors,
 );
 
 /**
@@ -75,12 +77,19 @@ router.get(
   "/:id",
   requireAuth,
   cacheMiddleware(90),
-  sensorController.getSensorById
+  sensorController.getSensorById,
 );
 
 /**
+ * POST /api/sensors
+ * Create new sensor (SuperAdmin & Admin)
+ * Body: { ipal_id, sensor_type, sensor_location, sensor_description? }
+ */
+router.post("/", requireAuth, requireAdmin, sensorController.createSensor);
+
+/**
  * PUT /api/sensors/:id
- * Update sensor (Manager/Admin only)
+ * Update sensor (SuperAdmin & Admin)
  *
  * Body (all optional):
  * {
@@ -90,7 +99,18 @@ router.get(
  *   "status": "maintenance"
  * }
  */
-router.put("/:id", requireAuth, requireManager, sensorController.updateSensor);
+router.put("/:id", requireAuth, requireAdmin, sensorController.updateSensor);
+
+/**
+ * DELETE /api/sensors/:id
+ * Delete sensor (SuperAdmin ONLY)
+ */
+router.delete(
+  "/:id",
+  requireAuth,
+  requireSuperAdmin,
+  sensorController.deleteSensor,
+);
 
 /**
  * GET /api/sensors/:id/status
@@ -101,7 +121,7 @@ router.get(
   "/:id/status",
   requireAuth,
   cacheMiddleware(30),
-  sensorController.getSensorStatus
+  sensorController.getSensorStatus,
 );
 
 /**
@@ -113,7 +133,7 @@ router.get(
   "/ipal/:ipal_id",
   requireAuth,
   cacheMiddleware(60),
-  sensorController.getSensorsByIpal
+  sensorController.getSensorsByIpal,
 );
 
 /**
@@ -125,7 +145,7 @@ router.get(
   "/:id/latest",
   requireAuth,
   cacheMiddleware(25),
-  sensorController.getLatestReadingBySensor
+  sensorController.getLatestReadingBySensor,
 );
 
 /**
@@ -140,4 +160,4 @@ router.get("/:id/history", requireAuth, sensorController.getSensorHistory);
 
 module.exports = router;
 
-console.log("📦 sensorRoutes (extended) loaded");
+console.log("📦 sensorRoutes (full CRUD) loaded");

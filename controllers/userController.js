@@ -2,7 +2,7 @@
  * ========================================
  * USER MANAGEMENT CONTROLLER
  * ========================================
- * Handle CRUD operations for users (Admin only)
+ * Handle CRUD operations for users (SuperAdmin only)
  * - Create user with role (Firebase Auth + Firestore)
  * - Get all users
  * - Update user (role, username)
@@ -15,17 +15,18 @@ const { admin, db } = require("../config/firebase-config");
  * CREATE NEW USER
  * POST /api/users
  * Body: { email, password, role, username }
- * Admin creates new user with specific role
+ * SuperAdmin creates new admin user
+ * Note: SuperAdmin can only be created via Firebase Console (security measure)
  */
 exports.createUser = async (req, res) => {
   try {
-    const { email, password, role = "teknisi", username } = req.body;
+    const { email, password, role = "admin", username } = req.body;
 
-    // Validate admin
-    if (req.user.role !== "admin") {
+    // Only superadmin can create users
+    if (req.user.role !== "superadmin") {
       return res.status(403).json({
         success: false,
-        message: "Only admins can create users",
+        message: "Only Super Admin can create users",
       });
     }
 
@@ -37,12 +38,13 @@ exports.createUser = async (req, res) => {
       });
     }
 
-    // Validate role
-    const validRoles = ["admin", "manager", "teknisi"];
+    // Only allow creating admin role (superadmin cannot be created via API)
+    const validRoles = ["admin"];
     if (!validRoles.includes(role)) {
       return res.status(400).json({
         success: false,
-        message: `Invalid role. Must be one of: ${validRoles.join(", ")}`,
+        message:
+          "Invalid role. Can only create 'admin' users. SuperAdmin can only be added via Firebase Console.",
       });
     }
 
@@ -119,12 +121,12 @@ exports.createUser = async (req, res) => {
 /**
  * GET ALL USERS
  * GET /api/users
- * Admin/Manager can view all users
+ * SuperAdmin/Admin can view all users
  */
 exports.getAllUsers = async (req, res) => {
   try {
     // Check permission
-    if (!["admin", "manager"].includes(req.user.role)) {
+    if (!["superadmin", "admin"].includes(req.user.role)) {
       return res.status(403).json({
         success: false,
         message: "You don't have permission to view users",
@@ -149,8 +151,8 @@ exports.getAllUsers = async (req, res) => {
       });
     });
 
-    // Sort by role: admin > manager > teknisi
-    const roleOrder = { admin: 1, manager: 2, teknisi: 3 };
+    // Sort by role: superadmin > admin
+    const roleOrder = { superadmin: 1, admin: 2 };
     users.sort((a, b) => roleOrder[a.role] - roleOrder[b.role]);
 
     console.log(`✅ Found ${users.length} users`);
@@ -173,15 +175,15 @@ exports.getAllUsers = async (req, res) => {
 /**
  * GET USER BY ID
  * GET /api/users/:uid
- * Admin/Manager can view user details
+ * SuperAdmin/Admin can view user details
  */
 exports.getUserById = async (req, res) => {
   try {
     const { uid } = req.params;
 
     // Check permission
-    if (!["admin", "manager"].includes(req.user.role)) {
-      // Teknisi can only view their own profile
+    if (!["superadmin", "admin"].includes(req.user.role)) {
+      // Other users can only view their own profile
       if (req.user.uid !== uid) {
         return res.status(403).json({
           success: false,
@@ -230,28 +232,29 @@ exports.getUserById = async (req, res) => {
 /**
  * UPDATE USER
  * PUT /api/users/:uid
- * Admin can update role, username
+ * SuperAdmin can update role, username
  */
 exports.updateUser = async (req, res) => {
   try {
     const { uid } = req.params;
     const { username, role } = req.body;
 
-    // Only admin can update users
-    if (req.user.role !== "admin") {
+    // Only superadmin can update users
+    if (req.user.role !== "superadmin") {
       return res.status(403).json({
         success: false,
-        message: "Only admins can update users",
+        message: "Only Super Admin can update users",
       });
     }
 
-    // Validate role if provided
+    // Validate role if provided (cannot assign superadmin via API)
     if (role) {
-      const validRoles = ["admin", "manager", "teknisi"];
+      const validRoles = ["admin"];
       if (!validRoles.includes(role)) {
         return res.status(400).json({
           success: false,
-          message: `Invalid role. Must be one of: ${validRoles.join(", ")}`,
+          message:
+            "Invalid role. Can only assign 'admin' role. SuperAdmin can only be assigned via Firebase Console.",
         });
       }
     }
@@ -306,6 +309,140 @@ exports.updateUser = async (req, res) => {
 };
 
 /**
+ * Helper: find user doc by UID, email doc ID, or email field query
+ */
+async function findUserDoc(uid, email) {
+  // 1. Try by UID
+  let ref = db.collection("users").doc(uid);
+  let snap = await ref.get();
+  if (snap.exists) return { ref, snap };
+
+  // 2. Try by email as doc ID
+  console.log(`⚠️  Doc not found by UID ${uid}, trying email lookup...`);
+  ref = db.collection("users").doc(email);
+  snap = await ref.get();
+  if (snap.exists) {
+    console.log(`✅ Found user doc by email doc ID: ${email}`);
+    return { ref, snap };
+  }
+
+  // 3. Query by email field
+  const q = await db
+    .collection("users")
+    .where("email", "==", email)
+    .limit(1)
+    .get();
+  if (!q.empty) {
+    const doc = q.docs[0];
+    console.log(`✅ Found user doc by email query: ${doc.id}`);
+    return { ref: doc.ref, snap: doc };
+  }
+
+  return null;
+}
+
+/**
+ * GET OWN PROFILE
+ * GET /api/users/profile
+ * Any authenticated user can view their full profile
+ */
+exports.getProfile = async (req, res) => {
+  try {
+    const result = await findUserDoc(req.user.uid, req.user.email);
+
+    if (!result) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+
+    const data = result.snap.data();
+    return res.status(200).json({
+      success: true,
+      user: {
+        uid: result.snap.id,
+        email: data.email,
+        username: data.username,
+        role: data.role,
+        created_at: data.created_at || null,
+        updated_at: data.updated_at || null,
+      },
+    });
+  } catch (error) {
+    console.error("💥 Error getting profile:", error);
+    return res
+      .status(500)
+      .json({
+        success: false,
+        message: "Failed to get profile",
+        error: error.message,
+      });
+  }
+};
+
+/**
+ * UPDATE OWN PROFILE
+ * PUT /api/users/profile
+ * Any authenticated user can update their own username
+ */
+exports.updateProfile = async (req, res) => {
+  try {
+    const uid = req.user.uid;
+    const email = req.user.email;
+    const { username } = req.body;
+
+    if (!username || !username.trim()) {
+      return res.status(400).json({
+        success: false,
+        message: "Username is required",
+      });
+    }
+
+    console.log(`✏️  User updating own profile: ${uid} (${email})`);
+
+    const result = await findUserDoc(uid, email);
+    if (!result) {
+      return res
+        .status(404)
+        .json({ success: false, message: "User not found" });
+    }
+    const userDocRef = result.ref;
+
+    const updateData = {
+      username: username.trim(),
+      updated_at: new Date().toISOString(),
+    };
+
+    await userDocRef.update(updateData);
+
+    const updatedDoc = await userDocRef.get();
+    const updatedData = updatedDoc.data();
+
+    console.log(`✅ Profile updated: ${updatedDoc.id}`);
+
+    return res.status(200).json({
+      success: true,
+      message: "Profile updated successfully",
+      user: {
+        uid: updatedDoc.id,
+        email: updatedData.email,
+        username: updatedData.username,
+        role: updatedData.role,
+        created_at: updatedData.created_at,
+        updated_at: updatedData.updated_at,
+      },
+    });
+  } catch (error) {
+    console.error("💥 Error updating profile:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update profile",
+      error: error.message,
+    });
+  }
+};
+
+/**
  * DELETE USER
  * DELETE /api/users/:uid
  * Admin can delete users
@@ -314,11 +451,11 @@ exports.deleteUser = async (req, res) => {
   try {
     const { uid } = req.params;
 
-    // Only admin can delete users
-    if (req.user.role !== "admin") {
+    // Only superadmin can delete users
+    if (req.user.role !== "superadmin") {
       return res.status(403).json({
         success: false,
-        message: "Only admins can delete users",
+        message: "Only Super Admin can delete users",
       });
     }
 
@@ -383,11 +520,11 @@ exports.resetPassword = async (req, res) => {
     const { uid } = req.params;
     const { newPassword } = req.body;
 
-    // Only admin can reset passwords
-    if (req.user.role !== "admin") {
+    // Only superadmin can reset passwords
+    if (req.user.role !== "superadmin") {
       return res.status(403).json({
         success: false,
-        message: "Only admins can reset passwords",
+        message: "Only Super Admin can reset passwords",
       });
     }
 

@@ -68,7 +68,7 @@ exports.sendNotification = async (req, res) => {
       console.log("🔔 Sending push notifications...");
       results.push = await sendPushNotificationToMultiple(
         fcm_tokens,
-        alertData
+        alertData,
       );
     }
 
@@ -294,10 +294,10 @@ exports.registerDevice = async (req, res) => {
     const userDoc = await db.collection("users").doc(user.uid).get();
     const userData = userDoc.data();
 
-    if (userData.role === "manager") {
-      await subscribeToTopic(fcm_token, "managers");
-    } else if (userData.role === "teknisi") {
-      await subscribeToTopic(fcm_token, "teknisi");
+    if (userData.role === "superadmin") {
+      await subscribeToTopic(fcm_token, "superadmins");
+    } else if (userData.role === "admin") {
+      await subscribeToTopic(fcm_token, "admins");
     }
     await subscribeToTopic(fcm_token, "all-users");
 

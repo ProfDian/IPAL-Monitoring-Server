@@ -2,29 +2,32 @@
  * ========================================
  * IPAL ROUTES
  * ========================================
- * Read operations for IPAL facilities
+ * Full CRUD operations for IPAL facilities
+ * - GET: All authenticated users
+ * - POST/PUT: superadmin + admin
+ * - DELETE: superadmin only
  */
 
 const express = require("express");
 const router = express.Router();
 const ipalController = require("../controllers/ipalController");
-const { requireAuth } = require("../middleware/authMiddleware");
+const {
+  requireAuth,
+  requireAdmin,
+  requireSuperAdmin,
+} = require("../middleware/authMiddleware");
 const { cacheMiddleware } = require("../middleware/cacheMiddleware");
+
+// ========================================
+// READ OPERATIONS (All authenticated users)
+// ========================================
 
 /**
  * GET /api/ipals
  * Get all IPAL facilities
  * Cache: 10 minutes
- * Query params:
- *   - status: active|inactive|maintenance (optional)
- *   - limit: number (default: 50)
  */
-router.get(
-  "/",
-  requireAuth,
-  cacheMiddleware(600), // 10 minutes cache
-  ipalController.getAllIpals
-);
+router.get("/", requireAuth, cacheMiddleware(600), ipalController.getAllIpals);
 
 /**
  * GET /api/ipals/:ipal_id
@@ -34,22 +37,52 @@ router.get(
 router.get(
   "/:ipal_id",
   requireAuth,
-  cacheMiddleware(300), // 5 minutes cache
-  ipalController.getIpalById
+  cacheMiddleware(300),
+  ipalController.getIpalById,
 );
 
 /**
  * GET /api/ipals/:ipal_id/stats
- * Get IPAL statistics (sensor count, alert count, reading count)
+ * Get IPAL statistics
  * Cache: 3 minutes
  */
 router.get(
   "/:ipal_id/stats",
   requireAuth,
-  cacheMiddleware(180), // 3 minutes cache
-  ipalController.getIpalStats
+  cacheMiddleware(180),
+  ipalController.getIpalStats,
+);
+
+// ========================================
+// WRITE OPERATIONS (Admin+)
+// ========================================
+
+/**
+ * POST /api/ipals
+ * Create new IPAL (SuperAdmin & Admin)
+ * Body: { ipal_location, ipal_description, address?, capacity?, ... }
+ */
+router.post("/", requireAuth, requireAdmin, ipalController.createIpal);
+
+/**
+ * PUT /api/ipals/:ipal_id
+ * Update IPAL info (SuperAdmin & Admin)
+ * Body: { ipal_location?, ipal_description?, address?, status?, ... }
+ */
+router.put("/:ipal_id", requireAuth, requireAdmin, ipalController.updateIpal);
+
+/**
+ * DELETE /api/ipals/:ipal_id
+ * Delete IPAL (SuperAdmin ONLY)
+ * WARNING: Deactivates all associated sensors
+ */
+router.delete(
+  "/:ipal_id",
+  requireAuth,
+  requireSuperAdmin,
+  ipalController.deleteIpal,
 );
 
 module.exports = router;
 
-console.log("📦 ipalRoutes loaded");
+console.log("📦 ipalRoutes (full CRUD) loaded");

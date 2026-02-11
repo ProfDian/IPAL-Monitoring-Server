@@ -57,23 +57,26 @@ function clearCache(token) {
 /**
  * Auto-cleanup expired cache entries (runs every 10 minutes)
  */
-setInterval(() => {
-  const now = Date.now();
-  let cleaned = 0;
+setInterval(
+  () => {
+    const now = Date.now();
+    let cleaned = 0;
 
-  for (const [token, data] of tokenCache.entries()) {
-    if (now - data.timestamp > CACHE_DURATION) {
-      tokenCache.delete(token);
-      cleaned++;
+    for (const [token, data] of tokenCache.entries()) {
+      if (now - data.timestamp > CACHE_DURATION) {
+        tokenCache.delete(token);
+        cleaned++;
+      }
     }
-  }
 
-  if (cleaned > 0) {
-    console.log(
-      `🧹 Cache cleanup: removed ${cleaned} expired token(s), ${tokenCache.size} remaining`
-    );
-  }
-}, 10 * 60 * 1000); // 10 minutes
+    if (cleaned > 0) {
+      console.log(
+        `🧹 Cache cleanup: removed ${cleaned} expired token(s), ${tokenCache.size} remaining`,
+      );
+    }
+  },
+  10 * 60 * 1000,
+); // 10 minutes
 
 // ========================================
 // AUTH MIDDLEWARE
@@ -146,7 +149,7 @@ exports.requireAuth = async (req, res, next) => {
       req.user.email,
       "| Role:",
       req.user.role,
-      "| Cached for 1 hour"
+      "| Cached for 1 hour",
     );
 
     next();
@@ -183,7 +186,31 @@ exports.requireAuth = async (req, res, next) => {
 };
 
 /**
- * Require admin role
+ * Require superadmin role (highest privilege)
+ * Only superadmin can: delete IPAL/sensor, manage users
+ */
+exports.requireSuperAdmin = (req, res, next) => {
+  if (!req.user) {
+    return res.status(401).json({
+      success: false,
+      message: "Authentication required",
+    });
+  }
+
+  if (req.user.role !== "superadmin") {
+    return res.status(403).json({
+      success: false,
+      message: "Super Admin access required. Your role: " + req.user.role,
+    });
+  }
+
+  console.log("✅ Super Admin access granted:", req.user.email);
+  next();
+};
+
+/**
+ * Require admin role (superadmin or admin)
+ * Admin can: create/edit IPAL & sensor, view users
  */
 exports.requireAdmin = (req, res, next) => {
   if (!req.user) {
@@ -193,7 +220,7 @@ exports.requireAdmin = (req, res, next) => {
     });
   }
 
-  if (req.user.role !== "admin") {
+  if (req.user.role !== "superadmin" && req.user.role !== "admin") {
     return res.status(403).json({
       success: false,
       message: "Admin access required. Your role: " + req.user.role,
@@ -201,28 +228,6 @@ exports.requireAdmin = (req, res, next) => {
   }
 
   console.log("✅ Admin access granted:", req.user.email);
-  next();
-};
-
-/**
- * Require manager role (admin or manager)
- */
-exports.requireManager = (req, res, next) => {
-  if (!req.user) {
-    return res.status(401).json({
-      success: false,
-      message: "Authentication required",
-    });
-  }
-
-  if (req.user.role !== "admin" && req.user.role !== "manager") {
-    return res.status(403).json({
-      success: false,
-      message: "Manager access required. Your role: " + req.user.role,
-    });
-  }
-
-  console.log("✅ Manager access granted:", req.user.email);
   next();
 };
 
@@ -256,5 +261,6 @@ exports.getCacheStats = () => {
 console.log("📦 authMiddleware loaded (JWT verify with cache)");
 console.log(`⏱️  Cache duration: ${CACHE_DURATION / 1000 / 60} minutes`);
 
-// Alias for backward compatibility
+// Aliases for backward compatibility
 exports.verifyToken = exports.requireAuth;
+exports.requireManager = exports.requireAdmin; // legacy alias

@@ -2,12 +2,15 @@
  * ========================================
  * IPAL CONTROLLER
  * ========================================
- * Read operations for IPAL facilities
- * Support for dynamic IPAL selection
+ * Full CRUD operations for IPAL facilities
+ * - GET: All users with auth
+ * - CREATE/UPDATE: superadmin + admin
+ * - DELETE: superadmin only
  */
 
 const { admin, db } = require("../config/firebase-config");
 const cacheService = require("../services/cacheService");
+const { invalidateCache } = require("../middleware/cacheMiddleware");
 
 /**
  * GET ALL IPALS
@@ -71,7 +74,7 @@ exports.getAllIpals = async (req, res) => {
 
         return ipals;
       },
-      600 // Cache for 10 minutes
+      600, // Cache for 10 minutes
     );
 
     console.log(`✅ Found ${ipals.length} IPALs`);
@@ -171,7 +174,7 @@ exports.getIpalById = async (req, res) => {
           latest_reading: latestReading,
         };
       },
-      300 // Cache for 5 minutes
+      300, // Cache for 5 minutes
     );
 
     if (!result) {
@@ -182,7 +185,7 @@ exports.getIpalById = async (req, res) => {
     }
 
     console.log(
-      `✅ IPAL found: ${ipal_id} with ${result.sensor_count} sensors`
+      `✅ IPAL found: ${ipal_id} with ${result.sensor_count} sensors`,
     );
 
     return res.status(200).json({
@@ -287,7 +290,7 @@ exports.getIpalStats = async (req, res) => {
               .where(
                 "timestamp",
                 ">=",
-                admin.firestore.Timestamp.fromDate(today)
+                admin.firestore.Timestamp.fromDate(today),
               )
               .count()
               .get();
@@ -312,7 +315,7 @@ exports.getIpalStats = async (req, res) => {
           },
         };
       },
-      180 // Cache for 3 minutes (stats change more frequently)
+      180, // Cache for 3 minutes (stats change more frequently)
     );
 
     console.log(`✅ Statistics fetched for IPAL ${ipal_id}`);
@@ -331,4 +334,299 @@ exports.getIpalStats = async (req, res) => {
   }
 };
 
-console.log("📦 ipalController loaded");
+// ========================================
+// CREATE, UPDATE, DELETE IPAL
+// ========================================
+
+/**
+ * CREATE IPAL
+ * Endpoint: POST /api/ipals
+ * Access: superadmin, admin
+ * Body: { ipal_location, ipal_description, address?, capacity?, contact_person?, contact_phone?, coordinates?, operational_hours?, installation_date? }
+ */
+exports.createIpal = async (req, res) => {
+  try {
+    const {
+      ipal_location,
+      ipal_description,
+      address,
+      capacity,
+      contact_person,
+      contact_phone,
+      coordinates,
+      operational_hours,
+      installation_date,
+    } = req.body;
+
+    const user = req.user;
+
+    console.log(`🏭 Creating new IPAL by ${user.email}`);
+
+    // Validate required fields
+    if (!ipal_location || !ipal_description) {
+      return res.status(400).json({
+        success: false,
+        message: "ipal_location and ipal_description are required",
+      });
+    }
+
+    // Auto-generate next ipal_id
+    const existingIpals = await db
+      .collection("ipals")
+      .orderBy("ipal_id", "desc")
+      .limit(1)
+      .get();
+
+    let nextIpalId = 1;
+    if (!existingIpals.empty) {
+      nextIpalId = existingIpals.docs[0].data().ipal_id + 1;
+    }
+
+    // Prepare IPAL data
+    const ipalData = {
+      ipal_id: nextIpalId,
+      ipal_location,
+      ipal_description,
+      address: address || null,
+      capacity: capacity || null,
+      contact_person: contact_person || null,
+      contact_phone: contact_phone || null,
+      coordinates: coordinates || null,
+      operational_hours: operational_hours || "24/7",
+      installation_date: installation_date
+        ? admin.firestore.Timestamp.fromDate(new Date(installation_date))
+        : null,
+      status: "active",
+      created_at: admin.firestore.FieldValue.serverTimestamp(),
+      created_by: user.email,
+      updated_at: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    // Save to Firestore
+    const docRef = await db.collection("ipals").add(ipalData);
+
+    // Invalidate cache
+    invalidateCache(["/api/ipals"]);
+    cacheService.invalidatePattern("ipals:*");
+
+    console.log(`✅ IPAL created: ${docRef.id} (ipal_id: ${nextIpalId})`);
+
+    return res.status(201).json({
+      success: true,
+      message: "IPAL created successfully",
+      data: {
+        id: docRef.id,
+        ipal_id: nextIpalId,
+        ipal_location,
+        ipal_description,
+        status: "active",
+        created_by: user.email,
+      },
+    });
+  } catch (error) {
+    console.error("💥 Error creating IPAL:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to create IPAL",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * UPDATE IPAL
+ * Endpoint: PUT /api/ipals/:ipal_id
+ * Access: superadmin, admin
+ * Body: { ipal_location?, ipal_description?, address?, capacity?, contact_person?, contact_phone?, coordinates?, operational_hours?, status? }
+ */
+exports.updateIpal = async (req, res) => {
+  try {
+    const { ipal_id } = req.params;
+    const {
+      ipal_location,
+      ipal_description,
+      address,
+      capacity,
+      contact_person,
+      contact_phone,
+      coordinates,
+      operational_hours,
+      status,
+    } = req.body;
+
+    const user = req.user;
+
+    console.log(`✏️ Updating IPAL ${ipal_id} by ${user.email}`);
+
+    // Find IPAL document by ipal_id field
+    const snapshot = await db
+      .collection("ipals")
+      .where("ipal_id", "==", parseInt(ipal_id))
+      .limit(1)
+      .get();
+
+    if (snapshot.empty) {
+      return res.status(404).json({
+        success: false,
+        message: `IPAL with ID ${ipal_id} not found`,
+      });
+    }
+
+    const docRef = snapshot.docs[0].ref;
+
+    // Build update data (only include provided fields)
+    const updateData = {
+      updated_at: admin.firestore.FieldValue.serverTimestamp(),
+      updated_by: user.email,
+    };
+
+    if (ipal_location !== undefined) updateData.ipal_location = ipal_location;
+    if (ipal_description !== undefined)
+      updateData.ipal_description = ipal_description;
+    if (address !== undefined) updateData.address = address;
+    if (capacity !== undefined) updateData.capacity = capacity;
+    if (contact_person !== undefined)
+      updateData.contact_person = contact_person;
+    if (contact_phone !== undefined) updateData.contact_phone = contact_phone;
+    if (coordinates !== undefined) updateData.coordinates = coordinates;
+    if (operational_hours !== undefined)
+      updateData.operational_hours = operational_hours;
+    if (status !== undefined) {
+      const validStatuses = ["active", "inactive", "maintenance"];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+          success: false,
+          message: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
+        });
+      }
+      updateData.status = status;
+    }
+
+    await docRef.update(updateData);
+
+    // Invalidate cache
+    invalidateCache(["/api/ipals", `/api/ipals/${ipal_id}`]);
+    cacheService.invalidatePattern("ipals:*");
+    cacheService.invalidate(`ipal:${ipal_id}`);
+
+    // Get updated document
+    const updatedDoc = await docRef.get();
+    const updatedData = updatedDoc.data();
+
+    console.log(`✅ IPAL ${ipal_id} updated successfully`);
+
+    return res.status(200).json({
+      success: true,
+      message: "IPAL updated successfully",
+      data: {
+        id: updatedDoc.id,
+        ipal_id: updatedData.ipal_id,
+        ipal_location: updatedData.ipal_location,
+        ipal_description: updatedData.ipal_description,
+        address: updatedData.address,
+        capacity: updatedData.capacity,
+        status: updatedData.status,
+        updated_by: user.email,
+      },
+    });
+  } catch (error) {
+    console.error("💥 Error updating IPAL:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to update IPAL",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * DELETE IPAL
+ * Endpoint: DELETE /api/ipals/:ipal_id
+ * Access: superadmin ONLY
+ * WARNING: This will also deactivate all sensors associated with this IPAL
+ */
+exports.deleteIpal = async (req, res) => {
+  try {
+    const { ipal_id } = req.params;
+    const user = req.user;
+
+    console.log(`🗑️ Deleting IPAL ${ipal_id} by ${user.email}`);
+
+    // Find IPAL document
+    const snapshot = await db
+      .collection("ipals")
+      .where("ipal_id", "==", parseInt(ipal_id))
+      .limit(1)
+      .get();
+
+    if (snapshot.empty) {
+      return res.status(404).json({
+        success: false,
+        message: `IPAL with ID ${ipal_id} not found`,
+      });
+    }
+
+    const ipalDoc = snapshot.docs[0];
+    const ipalData = ipalDoc.data();
+
+    // Check for associated sensors
+    const sensorSnapshot = await db
+      .collection("sensors")
+      .where("ipal_id", "==", parseInt(ipal_id))
+      .get();
+
+    const sensorCount = sensorSnapshot.size;
+
+    // Deactivate associated sensors (soft delete)
+    if (sensorCount > 0) {
+      const batch = db.batch();
+      sensorSnapshot.forEach((sensorDoc) => {
+        batch.update(sensorDoc.ref, {
+          status: "inactive",
+          updated_at: admin.firestore.FieldValue.serverTimestamp(),
+          updated_by: user.email,
+          deactivated_reason: `IPAL ${ipal_id} deleted`,
+        });
+      });
+      await batch.commit();
+      console.log(`⚠️ Deactivated ${sensorCount} sensors from IPAL ${ipal_id}`);
+    }
+
+    // Delete IPAL document
+    await ipalDoc.ref.delete();
+
+    // Invalidate cache
+    invalidateCache([
+      "/api/ipals",
+      `/api/ipals/${ipal_id}`,
+      "/api/sensors",
+      "/api/dashboard",
+    ]);
+    cacheService.invalidatePattern("ipals:*");
+    cacheService.invalidatePattern("sensors:*");
+    cacheService.invalidate(`ipal:${ipal_id}`);
+
+    console.log(
+      `✅ IPAL ${ipal_id} deleted (${sensorCount} sensors deactivated)`,
+    );
+
+    return res.status(200).json({
+      success: true,
+      message: `IPAL "${ipalData.ipal_location}" deleted successfully`,
+      data: {
+        deleted_ipal_id: parseInt(ipal_id),
+        ipal_location: ipalData.ipal_location,
+        sensors_deactivated: sensorCount,
+      },
+    });
+  } catch (error) {
+    console.error("💥 Error deleting IPAL:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete IPAL",
+      error: error.message,
+    });
+  }
+};
+
+console.log("📦 ipalController (full CRUD) loaded");

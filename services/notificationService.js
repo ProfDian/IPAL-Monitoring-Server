@@ -108,7 +108,7 @@ async function sendAlerts(alerts) {
     console.log(
       `📊 Notification summary: Email=${
         results.email?.success ? "✅" : "❌"
-      }, FCM=${results.fcm?.success ? "✅" : "❌"}`
+      }, FCM=${results.fcm?.success ? "✅" : "❌"}`,
     );
 
     return {
@@ -135,19 +135,19 @@ async function sendAlerts(alerts) {
  */
 
 /**
- * Get notification recipients (admin & manager users)
+ * Get notification recipients (superadmin & admin users)
  * @returns {Promise<Object>} Recipients { emails: [], fcmTokens: [] }
  */
 async function getNotificationRecipients() {
   try {
-    // Query users with role admin, manager, or operator
+    // Query users with role superadmin or admin
     const usersSnapshot = await db
       .collection("users")
-      .where("role", "in", ["admin", "manager", "operator"])
+      .where("role", "in", ["superadmin", "admin"])
       .get();
 
     if (usersSnapshot.empty) {
-      console.log("⚠️  No admin/manager/operator users found in Firestore");
+      console.log("⚠️  No superadmin/admin users found in Firestore");
       return {
         emails: [],
         fcmTokens: [],
@@ -172,7 +172,7 @@ async function getNotificationRecipients() {
     });
 
     console.log(
-      `✅ Recipients loaded: ${emails.length} emails, ${fcmTokens.length} FCM tokens`
+      `✅ Recipients loaded: ${emails.length} emails, ${fcmTokens.length} FCM tokens`,
     );
 
     return {
@@ -282,7 +282,7 @@ async function sendFCMForAlerts(alerts, fcmTokens) {
     // Send to multiple devices
     const result = await fcmService.sendPushNotificationToMultiple(
       fcmTokens,
-      fcmData
+      fcmData,
     );
 
     return result;
@@ -349,7 +349,7 @@ async function sendEmailAlert(alertData) {
     // Send email
     return await emailService.sendWaterQualityAlert(
       alertData,
-      recipients.emails
+      recipients.emails,
     );
   } catch (error) {
     console.error("❌ Error in sendEmailAlert:", error);
@@ -382,7 +382,7 @@ async function sendFCMNotification(alertData) {
     // Send FCM
     return await fcmService.sendPushNotificationToMultiple(
       recipients.fcmTokens,
-      alertData
+      alertData,
     );
   } catch (error) {
     console.error("❌ Error in sendFCMNotification:", error);
@@ -404,7 +404,7 @@ async function sendFCMNotification(alertData) {
  */
 async function sendNotification(token, message) {
   console.log(
-    "⚠️  sendNotification (legacy) called - consider using sendAlerts()"
+    "⚠️  sendNotification (legacy) called - consider using sendAlerts()",
   );
 
   const payload = {

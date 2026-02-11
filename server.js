@@ -233,7 +233,9 @@ if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
     console.log("   GET    /api/sensors/:id/status");
     console.log("   GET    /api/sensors/:id/latest");
     console.log("   GET    /api/sensors/:id/history");
-    console.log("   PUT    /api/sensors/:id                    (Manager+)");
+    console.log("   POST   /api/sensors                       (Admin+)");
+    console.log("   PUT    /api/sensors/:id                    (Admin+)");
+    console.log("   DELETE /api/sensors/:id                    (SuperAdmin)");
     console.log("   GET    /api/sensors/readings");
     console.log("   GET    /api/sensors/readings/latest/:ipal_id");
 
@@ -260,6 +262,9 @@ if (process.env.NODE_ENV !== "production" || !process.env.VERCEL) {
     console.log("   GET    /api/ipals");
     console.log("   GET    /api/ipals/:ipal_id");
     console.log("   GET    /api/ipals/:ipal_id/stats");
+    console.log("   POST   /api/ipals                         (Admin+)");
+    console.log("   PUT    /api/ipals/:ipal_id                (Admin+)");
+    console.log("   DELETE /api/ipals/:ipal_id                (SuperAdmin)");
 
     console.log("\n📋 Dashboard:");
     console.log("   GET    /api/dashboard/summary/:ipal_id");

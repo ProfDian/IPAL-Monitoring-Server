@@ -3,7 +3,9 @@
  * SENSOR CONTROLLER (EXTENDED)
  * ========================================
  * Complete CRUD operations for sensor management
- * Melengkapi sensorController.js yang sudah ada
+ * - GET: All authenticated users
+ * - CREATE/UPDATE: superadmin + admin
+ * - DELETE: superadmin only
  */
 
 const { admin, db } = require("../config/firebase-config");
@@ -749,4 +751,214 @@ exports.getSensorHistory = async (req, res) => {
   }
 };
 
-console.log("📦 sensorController (optimized) loaded");
+// ========================================
+// CREATE & DELETE SENSOR
+// ========================================
+
+/**
+ * CREATE SENSOR
+ * Endpoint: POST /api/sensors
+ * Access: superadmin, admin
+ * Body: { ipal_id, sensor_type, sensor_location, sensor_description? }
+ */
+exports.createSensor = async (req, res) => {
+  try {
+    const { ipal_id, sensor_type, sensor_location, sensor_description } =
+      req.body;
+    const user = req.user;
+
+    console.log(`🔧 Creating new sensor by ${user.email}`);
+
+    // Validate required fields
+    if (!ipal_id || !sensor_type || !sensor_location) {
+      return res.status(400).json({
+        success: false,
+        message: "ipal_id, sensor_type, and sensor_location are required",
+      });
+    }
+
+    // Validate sensor_type
+    const validTypes = ["ph", "tds", "turbidity", "temperature"];
+    if (!validTypes.includes(sensor_type.toLowerCase())) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid sensor_type. Must be one of: ${validTypes.join(", ")}`,
+      });
+    }
+
+    // Validate sensor_location
+    const validLocations = ["inlet", "outlet"];
+    if (!validLocations.includes(sensor_location.toLowerCase())) {
+      return res.status(400).json({
+        success: false,
+        message: `Invalid sensor_location. Must be one of: ${validLocations.join(", ")}`,
+      });
+    }
+
+    // Verify IPAL exists
+    const ipalSnapshot = await db
+      .collection("ipals")
+      .where("ipal_id", "==", parseInt(ipal_id))
+      .limit(1)
+      .get();
+
+    if (ipalSnapshot.empty) {
+      return res.status(404).json({
+        success: false,
+        message: `IPAL with ID ${ipal_id} not found`,
+      });
+    }
+
+    const ipalData = ipalSnapshot.docs[0].data();
+
+    // Check for duplicate sensor (same type + location + ipal)
+    const duplicateCheck = await db
+      .collection("sensors")
+      .where("ipal_id", "==", parseInt(ipal_id))
+      .where("sensor_type", "==", sensor_type.toLowerCase())
+      .where("sensor_location", "==", sensor_location.toLowerCase())
+      .where("status", "==", "active")
+      .limit(1)
+      .get();
+
+    if (!duplicateCheck.empty) {
+      return res.status(409).json({
+        success: false,
+        message: `Active sensor of type '${sensor_type}' at '${sensor_location}' already exists for IPAL ${ipal_id}`,
+      });
+    }
+
+    // Generate sensor document ID
+    // Format: sensor-{ipal_id}-{type}-{location}-{sequence}
+    // Includes ipal_id to prevent cross-IPAL ID collisions
+    const existingSensors = await db
+      .collection("sensors")
+      .where("ipal_id", "==", parseInt(ipal_id))
+      .where("sensor_type", "==", sensor_type.toLowerCase())
+      .where("sensor_location", "==", sensor_location.toLowerCase())
+      .get();
+
+    const sequence = String(existingSensors.size + 1).padStart(3, "0");
+    const sensorDocId = `sensor-${parseInt(ipal_id)}-${sensor_type.toLowerCase()}-${sensor_location.toLowerCase()}-${sequence}`;
+
+    // Auto-generate description if not provided
+    const autoDescription =
+      sensor_description ||
+      `Sensor ${sensor_type.toUpperCase()} ${sensor_location} ${ipalData.ipal_location}`;
+
+    // Prepare sensor data
+    const sensorData = {
+      ipal_id: parseInt(ipal_id),
+      sensor_type: sensor_type.toLowerCase(),
+      sensor_location: sensor_location.toLowerCase(),
+      sensor_description: autoDescription,
+      status: "active",
+      readings_count: 0,
+      latest_reading: null,
+      last_updated_at: null,
+      last_calibration: null,
+      added_at: admin.firestore.FieldValue.serverTimestamp(),
+      added_by: user.email,
+      updated_at: admin.firestore.FieldValue.serverTimestamp(),
+    };
+
+    // Save with custom document ID
+    await db.collection("sensors").doc(sensorDocId).set(sensorData);
+
+    // Invalidate cache
+    invalidateCache([
+      "/api/sensors",
+      `/api/sensors/ipal/${ipal_id}`,
+      "/api/dashboard",
+    ]);
+    cacheService.invalidatePattern("sensors:*");
+    cacheService.invalidatePattern(`ipal:${ipal_id}*`);
+
+    console.log(`✅ Sensor created: ${sensorDocId} for IPAL ${ipal_id}`);
+
+    return res.status(201).json({
+      success: true,
+      message: "Sensor created successfully",
+      data: {
+        id: sensorDocId,
+        ipal_id: parseInt(ipal_id),
+        sensor_type: sensor_type.toLowerCase(),
+        sensor_location: sensor_location.toLowerCase(),
+        sensor_description: autoDescription,
+        status: "active",
+        added_by: user.email,
+      },
+    });
+  } catch (error) {
+    console.error("💥 Error creating sensor:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to create sensor",
+      error: error.message,
+    });
+  }
+};
+
+/**
+ * DELETE SENSOR
+ * Endpoint: DELETE /api/sensors/:id
+ * Access: superadmin ONLY
+ */
+exports.deleteSensor = async (req, res) => {
+  try {
+    const { id } = req.params;
+    const user = req.user;
+
+    console.log(`🗑️ Deleting sensor ${id} by ${user.email}`);
+
+    // Check if sensor exists
+    const sensorDoc = await db.collection("sensors").doc(id).get();
+
+    if (!sensorDoc.exists) {
+      return res.status(404).json({
+        success: false,
+        message: `Sensor with ID ${id} not found`,
+      });
+    }
+
+    const sensorData = sensorDoc.data();
+
+    // Delete sensor document
+    await db.collection("sensors").doc(id).delete();
+
+    // Invalidate cache
+    invalidateCache([
+      "/api/sensors",
+      `/api/sensors/${id}`,
+      `/api/sensors/ipal/${sensorData.ipal_id}`,
+      "/api/dashboard",
+    ]);
+    cacheService.invalidate(cacheService.KEYS.SENSOR(id));
+    cacheService.invalidate(cacheService.KEYS.LATEST_READING(id));
+    cacheService.invalidatePattern(`history:${id}:*`);
+    cacheService.invalidatePattern("sensors:*");
+    cacheService.invalidatePattern(`ipal:${sensorData.ipal_id}*`);
+
+    console.log(`✅ Sensor ${id} deleted (was in IPAL ${sensorData.ipal_id})`);
+
+    return res.status(200).json({
+      success: true,
+      message: `Sensor "${sensorData.sensor_description}" deleted successfully`,
+      data: {
+        deleted_sensor_id: id,
+        sensor_type: sensorData.sensor_type,
+        sensor_location: sensorData.sensor_location,
+        ipal_id: sensorData.ipal_id,
+      },
+    });
+  } catch (error) {
+    console.error("💥 Error deleting sensor:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to delete sensor",
+      error: error.message,
+    });
+  }
+};
+
+console.log("📦 sensorController (full CRUD) loaded");
