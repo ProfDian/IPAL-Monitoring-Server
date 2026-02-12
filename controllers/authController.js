@@ -27,7 +27,7 @@ console.log("🔑 JWT Secret loaded:", JWT_SECRET ? "✅ Yes" : "❌ No");
 exports.login = async (req, res) => {
   try {
     const { email, password } = req.body;
-
+    console.log("🚀 TA-Server: Processing login request");
     console.log("📥 Login attempt for:", email);
 
     // Validasi input
