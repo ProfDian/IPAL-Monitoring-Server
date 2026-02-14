@@ -7,12 +7,12 @@ const readingSchema = Joi.object({
   device_id: Joi.string().optional().default("unknown"),
   inlet: Joi.object({
     ph: Joi.number().min(0).max(14).required(),
-    tds: Joi.number().min(0).max(2000).required(),
+    tds: Joi.number().min(0).max(10000).required(),
     temperature: Joi.number().min(-10).max(60).required(),
   }).required(),
   outlet: Joi.object({
     ph: Joi.number().min(0).max(14).required(),
-    tds: Joi.number().min(0).max(2000).required(),
+    tds: Joi.number().min(0).max(10000).required(),
     temperature: Joi.number().min(-10).max(60).required(),
   }).required(),
   // ⭐ TAMBAH INI - sensor_mapping

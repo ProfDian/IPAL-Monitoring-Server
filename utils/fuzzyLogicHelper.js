@@ -13,7 +13,8 @@
  * - test-fuzzy.js (testing)
  */
 
-// Baku mutu parameter (sesuaikan dengan regulasi)
+// Baku mutu parameter - Sesuai Baku Mutu Pemerintah
+// Synchronized with services/fuzzyService.js STANDARDS
 const THRESHOLDS = {
   pH: {
     inlet: { min: 6.0, max: 9.0 },
@@ -21,14 +22,13 @@ const THRESHOLDS = {
     optimalIncrease: { min: 0.3, max: 1.5 }, // pH harus naik sedikit
   },
   tds: {
-    inlet: { max: 2000 },
-    outlet: { max: 1000 },
+    inlet: { max: 4000 },
+    outlet: { max: 4000 }, // Baku mutu pemerintah: ≤4000 mg/L
     minReduction: 0.15, // TDS harus turun min 15%
   },
-
   temperature: {
     inlet: { min: 20, max: 40 },
-    outlet: { min: 20, max: 38 },
+    outlet: { min: 20, max: 40 }, // Baku mutu pemerintah: ≤40°C
     maxDifference: 3, // Perbedaan suhu max 3°C
   },
 };
