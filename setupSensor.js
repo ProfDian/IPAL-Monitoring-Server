@@ -1,6 +1,6 @@
 /**
  * ========================================
- * SETUP SENSORS - Create 8 Sensor Documents
+ * SETUP SENSORS - Create 6 Sensor Documents
  * ========================================
  * Run this ONCE to create sensor metadata
  *
@@ -10,7 +10,7 @@
 const { db, admin } = require("./config/firebase-config");
 
 const sensors = [
-  // INLET SENSORS (4)
+  // INLET SENSORS (3)
   {
     sensor_id: "sensor-ph-inlet-001",
     ipal_id: 1,
@@ -21,7 +21,7 @@ const sensors = [
     added_by: "system",
     added_at: admin.firestore.FieldValue.serverTimestamp(),
     last_calibration: admin.firestore.Timestamp.fromDate(
-      new Date("2025-11-01T08:00:00Z")
+      new Date("2025-11-01T08:00:00Z"),
     ),
   },
   {
@@ -34,22 +34,10 @@ const sensors = [
     added_by: "system",
     added_at: admin.firestore.FieldValue.serverTimestamp(),
     last_calibration: admin.firestore.Timestamp.fromDate(
-      new Date("2025-11-01T08:00:00Z")
+      new Date("2025-11-01T08:00:00Z"),
     ),
   },
-  {
-    sensor_id: "sensor-turb-inlet-003",
-    ipal_id: 1,
-    sensor_type: "turbidity",
-    sensor_location: "inlet",
-    sensor_description: "Sensor Turbidity inlet IPAL Teknik Lingkungan UNDIP",
-    status: "active",
-    added_by: "system",
-    added_at: admin.firestore.FieldValue.serverTimestamp(),
-    last_calibration: admin.firestore.Timestamp.fromDate(
-      new Date("2025-11-01T08:00:00Z")
-    ),
-  },
+
   {
     sensor_id: "sensor-temp-inlet-004",
     ipal_id: 1,
@@ -60,11 +48,11 @@ const sensors = [
     added_by: "system",
     added_at: admin.firestore.FieldValue.serverTimestamp(),
     last_calibration: admin.firestore.Timestamp.fromDate(
-      new Date("2025-11-01T08:00:00Z")
+      new Date("2025-11-01T08:00:00Z"),
     ),
   },
 
-  // OUTLET SENSORS (4)
+  // OUTLET SENSORS (3)
   {
     sensor_id: "sensor-ph-outlet-005",
     ipal_id: 1,
@@ -75,7 +63,7 @@ const sensors = [
     added_by: "system",
     added_at: admin.firestore.FieldValue.serverTimestamp(),
     last_calibration: admin.firestore.Timestamp.fromDate(
-      new Date("2025-11-01T08:00:00Z")
+      new Date("2025-11-01T08:00:00Z"),
     ),
   },
   {
@@ -88,22 +76,10 @@ const sensors = [
     added_by: "system",
     added_at: admin.firestore.FieldValue.serverTimestamp(),
     last_calibration: admin.firestore.Timestamp.fromDate(
-      new Date("2025-11-01T08:00:00Z")
+      new Date("2025-11-01T08:00:00Z"),
     ),
   },
-  {
-    sensor_id: "sensor-turb-outlet-007",
-    ipal_id: 1,
-    sensor_type: "turbidity",
-    sensor_location: "outlet",
-    sensor_description: "Sensor Turbidity outlet IPAL Teknik Lingkungan UNDIP",
-    status: "active",
-    added_by: "system",
-    added_at: admin.firestore.FieldValue.serverTimestamp(),
-    last_calibration: admin.firestore.Timestamp.fromDate(
-      new Date("2025-11-01T08:00:00Z")
-    ),
-  },
+
   {
     sensor_id: "sensor-temp-outlet-008",
     ipal_id: 1,
@@ -115,7 +91,7 @@ const sensors = [
     added_by: "system",
     added_at: admin.firestore.FieldValue.serverTimestamp(),
     last_calibration: admin.firestore.Timestamp.fromDate(
-      new Date("2025-11-01T08:00:00Z")
+      new Date("2025-11-01T08:00:00Z"),
     ),
   },
 ];

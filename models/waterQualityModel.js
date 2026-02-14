@@ -37,7 +37,7 @@ async function saveToBuffer(data) {
       ipal_id,
       location, // "inlet" atau "outlet"
       device_id,
-      data: readingData, // { ph, tds, turbidity, temperature }
+      data: readingData, // { ph, tds, temperature }
       sensor_mapping: sensor_mapping || {},
       is_merged: false,
       timestamp: admin.firestore.FieldValue.serverTimestamp(),

@@ -23,7 +23,7 @@ const alertController = require("../controllers/alertController");
  *   - ipal_id: number
  *   - status: active|acknowledged|resolved
  *   - severity: low|medium|high|critical
- *   - parameter: ph|tds|turbidity|temperature
+ *   - parameter: ph|tds|temperature
  *   - location: inlet|outlet|efficiency|anomaly
  *   - limit: number (default: 50)
  *   - start_after: doc_id (for pagination)
@@ -41,7 +41,7 @@ router.get(
   "/stats",
   requireAuth,
   cacheMiddleware(45),
-  alertController.getAlertStats
+  alertController.getAlertStats,
 );
 
 /**

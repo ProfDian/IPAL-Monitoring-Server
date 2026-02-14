@@ -31,7 +31,6 @@ async function updateSensorsWithInitialData() {
     const dummyValues = {
       ph: 7.2,
       tds: 350,
-      turbidity: 2.5,
       temperature: 28.5,
     };
 
@@ -69,7 +68,7 @@ async function updateSensorsWithInitialData() {
     console.log(`📊 Total sensors updated: ${sensorsSnapshot.size}`);
     console.log("========================================\n");
     console.log(
-      "💡 All sensors now have initial data and should show as 'online'"
+      "💡 All sensors now have initial data and should show as 'online'",
     );
     console.log("   Refresh your frontend to see the changes!");
 

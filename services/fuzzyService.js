@@ -6,7 +6,7 @@
  * Analyzes outlet quality AND inlet→outlet treatment efficiency
  *
  * Features:
- * - Outlet quality scoring (pH, TDS, Turbidity, Temperature)
+ * - Outlet quality scoring (pH, TDS, Temperature)
  * - IPAL efficiency checks (reduction percentages)
  * - Violation detection with severity levels
  * - Recommendations generation
@@ -36,12 +36,6 @@ const THRESHOLDS = {
     inlet_max: 2000, // inlet bisa lebih tinggi
     min_reduction: 0.15, // TDS harus turun min 15%
   },
-  turbidity: {
-    max: 25, // NTU (outlet baku mutu)
-    optimal_max: 5,
-    inlet_max: 400, // inlet bisa lebih tinggi
-    min_reduction: 0.5, // Turbidity harus turun min 50%
-  },
   temperature: {
     min: 20, // °C
     max: 30,
@@ -59,8 +53,8 @@ const THRESHOLDS = {
 
 /**
  * Analyze water quality data with fuzzy logic
- * @param {Object} inlet - Inlet sensor data { ph, tds, turbidity, temperature }
- * @param {Object} outlet - Outlet sensor data { ph, tds, turbidity, temperature }
+ * @param {Object} inlet - Inlet sensor data { ph, tds, temperature }
+ * @param {Object} outlet - Outlet sensor data { ph, tds, temperature }
  * @returns {Object} Analysis result with score, status, violations
  */
 async function analyze(inlet, outlet) {
@@ -117,13 +111,6 @@ function calculateEfficiency(inlet, outlet) {
       inlet.tds > 0
         ? (((inlet.tds - outlet.tds) / inlet.tds) * 100).toFixed(1) + "%"
         : "N/A",
-    turbidity_reduction:
-      inlet.turbidity > 0
-        ? (
-            ((inlet.turbidity - outlet.turbidity) / inlet.turbidity) *
-            100
-          ).toFixed(1) + "%"
-        : "N/A",
     ph_change: (outlet.ph - inlet.ph).toFixed(2),
     temp_change: (outlet.temperature - inlet.temperature).toFixed(1) + "°C",
   };
@@ -147,23 +134,6 @@ function checkEfficiencyViolations(inlet, outlet) {
         condition: "insufficient_reduction",
         severity: tdsReduction < 0 ? "critical" : "high",
         message: `Efisiensi TDS rendah (${(tdsReduction * 100).toFixed(1)}%). IPAL harus mengurangi TDS minimal ${THRESHOLDS.tds.min_reduction * 100}%`,
-      });
-    }
-  }
-
-  // Check Turbidity reduction (should reduce by at least 50%)
-  if (inlet.turbidity > 0) {
-    const turbReduction =
-      (inlet.turbidity - outlet.turbidity) / inlet.turbidity;
-    if (turbReduction < THRESHOLDS.turbidity.min_reduction) {
-      violations.push({
-        parameter: "turbidity",
-        location: "efficiency",
-        value: (turbReduction * 100).toFixed(1),
-        threshold: THRESHOLDS.turbidity.min_reduction * 100,
-        condition: "insufficient_reduction",
-        severity: turbReduction < 0 ? "critical" : "high",
-        message: `Efisiensi Turbidity rendah (${(turbReduction * 100).toFixed(1)}%). IPAL harus mengurangi Turbidity minimal ${THRESHOLDS.turbidity.min_reduction * 100}%`,
       });
     }
   }
@@ -199,33 +169,25 @@ function calculateSimpleScore(data) {
   let score = 100;
   const deductions = [];
 
-  // 1. Check pH (weight: 25%)
+  // 1. Check pH (weight: 35%)
   const phScore = scorePH(data.ph);
-  const phDeduction = Math.round((100 - phScore) * 0.25);
+  const phDeduction = Math.round((100 - phScore) * 0.35);
   score -= phDeduction;
   if (phDeduction > 0) {
     deductions.push({ parameter: "pH", deduction: phDeduction });
   }
 
-  // 2. Check TDS (weight: 25%)
+  // 2. Check TDS (weight: 40%)
   const tdsScore = scoreTDS(data.tds);
-  const tdsDeduction = Math.round((100 - tdsScore) * 0.25);
+  const tdsDeduction = Math.round((100 - tdsScore) * 0.4);
   score -= tdsDeduction;
   if (tdsDeduction > 0) {
     deductions.push({ parameter: "TDS", deduction: tdsDeduction });
   }
 
-  // 3. Check Turbidity (weight: 30%)
-  const turbidityScore = scoreTurbidity(data.turbidity);
-  const turbidityDeduction = Math.round((100 - turbidityScore) * 0.3);
-  score -= turbidityDeduction;
-  if (turbidityDeduction > 0) {
-    deductions.push({ parameter: "Turbidity", deduction: turbidityDeduction });
-  }
-
-  // 4. Check Temperature (weight: 20%)
+  // 3. Check Temperature (weight: 25%)
   const tempScore = scoreTemperature(data.temperature);
-  const tempDeduction = Math.round((100 - tempScore) * 0.2);
+  const tempDeduction = Math.round((100 - tempScore) * 0.25);
   score -= tempDeduction;
   if (tempDeduction > 0) {
     deductions.push({ parameter: "Temperature", deduction: tempDeduction });
@@ -283,26 +245,6 @@ function scoreTDS(tds) {
     // Between optimal and max
     const range = max - optimal_max;
     const distance = tds - optimal_max;
-    return Math.round(100 - (distance / range) * 100);
-  }
-}
-
-/**
- * Score Turbidity value (0-100)
- */
-function scoreTurbidity(turbidity) {
-  const { max, optimal_max } = THRESHOLDS.turbidity;
-
-  if (turbidity > max) {
-    // Critical violation
-    return 0;
-  } else if (turbidity <= optimal_max) {
-    // Optimal range
-    return 100;
-  } else {
-    // Between optimal and max
-    const range = max - optimal_max;
-    const distance = turbidity - optimal_max;
     return Math.round(100 - (distance / range) * 100);
   }
 }
@@ -402,21 +344,6 @@ function checkViolations(data) {
     });
   }
 
-  // Check Turbidity
-  if (data.turbidity > THRESHOLDS.turbidity.max) {
-    violations.push({
-      parameter: "turbidity",
-      location: "outlet",
-      value: data.turbidity,
-      threshold: THRESHOLDS.turbidity.max,
-      condition: "above_maximum",
-      severity: determineSeverity("turbidity", data.turbidity),
-      message: `Turbidity outlet (${data.turbidity.toFixed(
-        1,
-      )} NTU) melebihi batas aman (${THRESHOLDS.turbidity.max} NTU)`,
-    });
-  }
-
   // Check Temperature
   if (
     data.temperature < THRESHOLDS.temperature.min ||
@@ -467,14 +394,6 @@ function determineSeverity(parameter, value) {
   }
 
   if (parameter === "tds") {
-    const ratio = value / threshold.max;
-    if (ratio > 2.0) return "critical";
-    if (ratio > 1.5) return "high";
-    if (ratio > 1.2) return "medium";
-    return "low";
-  }
-
-  if (parameter === "turbidity") {
     const ratio = value / threshold.max;
     if (ratio > 2.0) return "critical";
     if (ratio > 1.5) return "high";
@@ -548,14 +467,6 @@ function generateRecommendations(violations, inlet, outlet) {
         });
         break;
 
-      case "turbidity":
-        recommendations.push({
-          type: "treatment",
-          priority: violation.severity,
-          message: "Turbidity tinggi. Periksa sistem sedimentasi dan filtrasi.",
-        });
-        break;
-
       case "temperature":
         recommendations.push({
           type: "monitoring",
@@ -587,11 +498,10 @@ function generateRecommendations(violations, inlet, outlet) {
 function evaluateTreatmentEffectiveness(inlet, outlet) {
   const improvements = {
     tds: ((inlet.tds - outlet.tds) / inlet.tds) * 100,
-    turbidity: ((inlet.turbidity - outlet.turbidity) / inlet.turbidity) * 100,
   };
 
-  // Treatment is effective if TDS and turbidity reduced significantly
-  const isEffective = improvements.tds > 10 && improvements.turbidity > 20;
+  // Treatment is effective if TDS reduced significantly
+  const isEffective = improvements.tds > 10;
 
   return {
     isEffective,

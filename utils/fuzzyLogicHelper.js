@@ -25,11 +25,7 @@ const THRESHOLDS = {
     outlet: { max: 1000 },
     minReduction: 0.15, // TDS harus turun min 15%
   },
-  turbidity: {
-    inlet: { max: 400 },
-    outlet: { max: 25 }, // Baku mutu air limbah domestik
-    minReduction: 0.5, // Turbidity harus turun min 50%
-  },
+
   temperature: {
     inlet: { min: 20, max: 40 },
     outlet: { min: 20, max: 38 },
@@ -67,24 +63,6 @@ function tdsMembership(value, location) {
   if (value <= threshold) return { category: "normal", severity: "low" };
   if (value <= threshold * 1.2) return { category: "high", severity: "medium" };
   return { category: "very_high", severity: "high" };
-}
-
-/**
- * Fungsi membership untuk Turbidity
- */
-function turbidityMembership(value, location) {
-  const threshold =
-    location === "outlet"
-      ? THRESHOLDS.turbidity.outlet.max
-      : THRESHOLDS.turbidity.inlet.max;
-
-  if (value <= threshold * 0.3)
-    return { category: "very_clear", severity: "low" };
-  if (value <= threshold * 0.6) return { category: "clear", severity: "low" };
-  if (value <= threshold) return { category: "normal", severity: "low" };
-  if (value <= threshold * 1.5)
-    return { category: "turbid", severity: "medium" };
-  return { category: "very_turbid", severity: "high" };
 }
 
 /**
@@ -197,42 +175,6 @@ function analyzeParameterChange(inlet, outlet, parameter) {
       }
       break;
 
-    case "turbidity":
-      const turbidityReduction = ((inlet - outlet) / inlet) * 100;
-
-      // Rule 6: Turbidity harus turun minimal 50%
-      if (turbidityReduction < THRESHOLDS.turbidity.minReduction * 100) {
-        alerts.push({
-          parameter: "turbidity",
-          location: "comparison",
-          rule: "Turbidity tidak turun cukup",
-          message: `Turbidity hanya turun ${turbidityReduction.toFixed(
-            1,
-          )}% (seharusnya min ${THRESHOLDS.turbidity.minReduction * 100}%)`,
-          severity: "high",
-          inlet_value: inlet,
-          outlet_value: outlet,
-          reduction: turbidityReduction,
-        });
-      }
-
-      // Rule 7: Turbidity outlet melebihi baku mutu
-      if (outlet > THRESHOLDS.turbidity.outlet.max) {
-        alerts.push({
-          parameter: "turbidity",
-          location: "outlet",
-          rule: "Turbidity outlet melebihi baku mutu",
-          message: `Turbidity outlet ${outlet.toFixed(1)} NTU (max ${
-            THRESHOLDS.turbidity.outlet.max
-          } NTU)`,
-          severity: "critical",
-          inlet_value: inlet,
-          outlet_value: outlet,
-          threshold: THRESHOLDS.turbidity.outlet.max,
-        });
-      }
-      break;
-
     case "temperature":
       const tempDiff = Math.abs(outlet - inlet);
 
@@ -278,8 +220,8 @@ function analyzeParameterChange(inlet, outlet, parameter) {
 
 /**
  * Main Fuzzy Logic Analysis Function
- * @param {Object} inletData - Data dari inlet {ph, tds, turbidity, temperature}
- * @param {Object} outletData - Data dari outlet {ph, tds, turbidity, temperature}
+ * @param {Object} inletData - Data dari inlet {ph, tds, temperature}
+ * @param {Object} outletData - Data dari outlet {ph, tds, temperature}
  * @returns {Object} - Hasil analisis dengan alerts
  */
 function analyzeFuzzy(inletData, outletData) {
@@ -288,7 +230,7 @@ function analyzeFuzzy(inletData, outletData) {
   const alerts = [];
 
   // Analisis setiap parameter
-  const parameters = ["ph", "tds", "turbidity", "temperature"];
+  const parameters = ["ph", "tds", "temperature"];
 
   parameters.forEach((param) => {
     const paramAlerts = analyzeParameterChange(
@@ -361,7 +303,6 @@ module.exports = {
   THRESHOLDS,
   pHMembership,
   tdsMembership,
-  turbidityMembership,
   temperatureMembership,
 };
 

@@ -50,7 +50,7 @@ exports.getAlerts = async (req, res) => {
       query = query.where("severity", "==", severity);
     }
 
-    // Filter by parameter (ph/tds/turbidity/temperature)
+    // Filter by parameter (ph/tds/temperature)
     if (parameter) {
       query = query.where("parameter", "==", parameter);
     }
@@ -394,7 +394,6 @@ exports.getAlertStats = async (req, res) => {
       by_parameter: {
         ph: 0,
         tds: 0,
-        turbidity: 0,
         temperature: 0,
       },
       by_location: {

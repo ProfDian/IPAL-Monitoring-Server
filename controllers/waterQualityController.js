@@ -82,11 +82,11 @@ exports.submitReading = async (req, res) => {
     }
 
     // Validate data structure
-    if (!data.ph || !data.tds || !data.turbidity || !data.temperature) {
+    if (!data.ph || !data.tds || !data.temperature) {
       return res.status(400).json({
         success: false,
         message: "Invalid data structure",
-        required_fields: ["ph", "tds", "turbidity", "temperature"],
+        required_fields: ["ph", "tds", "temperature"],
       });
     }
 

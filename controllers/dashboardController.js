@@ -112,29 +112,29 @@ exports.getOverview = async (req, res) => {
             activeAlertsCount.critical > 0
               ? "critical"
               : activeAlertsCount.high > 0
-              ? "warning"
-              : "normal",
+                ? "warning"
+                : "normal",
         };
-      })
+      }),
     );
 
     // Calculate total statistics
     const totalStats = {
       total_ipals: ipalsSnapshot.size,
       ipals_with_critical_alerts: ipalSummaries.filter(
-        (ipal) => ipal.status === "critical"
+        (ipal) => ipal.status === "critical",
       ).length,
       ipals_with_warnings: ipalSummaries.filter(
-        (ipal) => ipal.status === "warning"
+        (ipal) => ipal.status === "warning",
       ).length,
       total_active_alerts: ipalSummaries.reduce(
         (sum, ipal) => sum + ipal.active_alerts.total,
-        0
+        0,
       ),
     };
 
     console.log(
-      `✅ Dashboard overview fetched for ${ipalsSnapshot.size} IPALs`
+      `✅ Dashboard overview fetched for ${ipalsSnapshot.size} IPALs`,
     );
 
     return res.status(200).json({
@@ -307,7 +307,7 @@ function calculateStats(readings) {
     return null;
   }
 
-  const parameters = ["ph", "tds", "turbidity", "temperature"];
+  const parameters = ["ph", "tds", "temperature"];
   const stats = {};
 
   parameters.forEach((param) => {
@@ -316,7 +316,7 @@ function calculateStats(readings) {
     if (values.length > 0) {
       stats[param] = {
         avg: parseFloat(
-          (values.reduce((a, b) => a + b, 0) / values.length).toFixed(2)
+          (values.reduce((a, b) => a + b, 0) / values.length).toFixed(2),
         ),
         min: parseFloat(Math.min(...values).toFixed(2)),
         max: parseFloat(Math.max(...values).toFixed(2)),
@@ -370,7 +370,7 @@ exports.getReadingsForChart = async (req, res) => {
     const { period = "today", start, end, limit = 100 } = req.query;
 
     console.log(
-      `📊 Fetching readings for chart - IPAL: ${ipal_id}, Period: ${period}`
+      `📊 Fetching readings for chart - IPAL: ${ipal_id}, Period: ${period}`,
     );
 
     // Calculate date range based on period
@@ -423,7 +423,7 @@ exports.getReadingsForChart = async (req, res) => {
     }
 
     console.log(
-      `   Date range: ${startDate.toISOString()} to ${endDate.toISOString()}`
+      `   Date range: ${startDate.toISOString()} to ${endDate.toISOString()}`,
     );
 
     // Query Firestore
@@ -488,13 +488,11 @@ exports.getReadingsForChart = async (req, res) => {
         // Inlet data (prefix untuk clarity di chart)
         inlet_ph: data.inlet?.ph || null,
         inlet_tds: data.inlet?.tds || null,
-        inlet_turbidity: data.inlet?.turbidity || null,
         inlet_temperature: data.inlet?.temperature || null,
 
         // Outlet data
         outlet_ph: data.outlet?.ph || null,
         outlet_tds: data.outlet?.tds || null,
-        outlet_turbidity: data.outlet?.turbidity || null,
         outlet_temperature: data.outlet?.temperature || null,
 
         // ⭐ FUZZY ANALYSIS (PENTING!)
@@ -558,7 +556,7 @@ function calculateReadingsSummary(readings) {
   // Total violations
   const totalViolations = readings.reduce(
     (sum, r) => sum + (r.alert_count || 0),
-    0
+    0,
   );
 
   // Latest reading
