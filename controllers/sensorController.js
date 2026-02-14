@@ -562,7 +562,7 @@ exports.getLatestReadingBySensor = async (req, res) => {
 
         // 2. ✅ OPTIMIZATION: Build EXACT mapping field from sensor metadata
         const location = sensorData.sensor_location; // inlet or outlet
-        const type = sensorData.sensor_type; // ph, tds, turbidity, temperature
+        const type = sensorData.sensor_type; // ph, tds, temperature
         const mappingField = `sensor_mapping.${location}_${type}`;
 
         console.log(`   📌 Using mapping field: ${mappingField}`);
@@ -778,7 +778,7 @@ exports.createSensor = async (req, res) => {
     }
 
     // Validate sensor_type
-    const validTypes = ["ph", "tds", "turbidity", "temperature"];
+    const validTypes = ["ph", "tds", "temperature"];
     if (!validTypes.includes(sensor_type.toLowerCase())) {
       return res.status(400).json({
         success: false,

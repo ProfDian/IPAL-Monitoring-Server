@@ -17,7 +17,7 @@ const reportService = {
       ipal_id = 1,
       start_date,
       end_date,
-      parameters = ["ph", "tds", "turbidity", "temperature"],
+      parameters = ["ph", "tds", "temperature"],
       location = "both",
     } = filters;
 
@@ -30,14 +30,14 @@ const reportService = {
 
       if (start_date) {
         const startTimestamp = admin.firestore.Timestamp.fromDate(
-          new Date(start_date + "T00:00:00Z")
+          new Date(start_date + "T00:00:00Z"),
         );
         query = query.where("timestamp", ">=", startTimestamp);
       }
 
       if (end_date) {
         const endTimestamp = admin.firestore.Timestamp.fromDate(
-          new Date(end_date + "T23:59:59Z")
+          new Date(end_date + "T23:59:59Z"),
         );
         query = query.where("timestamp", "<=", endTimestamp);
       }
@@ -402,7 +402,7 @@ const reportService = {
             yPosition,
             cardWidth,
             cardHeight,
-            5
+            5,
           )
           .fill("#e0f2fe");
 
@@ -413,7 +413,7 @@ const reportService = {
           .text(
             "TOTAL DATA",
             cardStartX + cardWidth + cardGap + 10,
-            yPosition + 10
+            yPosition + 10,
           );
 
         doc
@@ -423,7 +423,7 @@ const reportService = {
           .text(
             summary.total_readings.toString(),
             cardStartX + cardWidth + cardGap + 10,
-            yPosition + 25
+            yPosition + 25,
           );
 
         // Card 3: Report Date
@@ -433,7 +433,7 @@ const reportService = {
             yPosition,
             cardWidth,
             cardHeight,
-            5
+            5,
           )
           .fill("#fef3c7");
 
@@ -444,7 +444,7 @@ const reportService = {
           .text(
             "TANGGAL LAPORAN",
             cardStartX + (cardWidth + cardGap) * 2 + 10,
-            yPosition + 10
+            yPosition + 10,
           );
 
         doc
@@ -459,7 +459,7 @@ const reportService = {
             }),
             cardStartX + (cardWidth + cardGap) * 2 + 10,
             yPosition + 28,
-            { width: cardWidth - 20 }
+            { width: cardWidth - 20 },
           );
 
         yPosition += cardHeight + 15;
@@ -570,7 +570,8 @@ const reportService = {
         // REMOVAL EFFICIENCY
         // ========================================
         const removalStats = Object.entries(summary.parameters).filter(
-          ([key, value]) => typeof value === "string" && key.includes("removal")
+          ([key, value]) =>
+            typeof value === "string" && key.includes("removal"),
         );
 
         if (removalStats.length > 0) {
@@ -605,7 +606,7 @@ const reportService = {
                 yPosition,
                 removalBoxWidth - 6,
                 removalBoxHeight,
-                5
+                5,
               )
               .fill("#d1fae5");
 
@@ -616,7 +617,7 @@ const reportService = {
                 yPosition,
                 removalBoxWidth - 6,
                 removalBoxHeight,
-                5
+                5,
               )
               .stroke("#10b981");
 
@@ -629,7 +630,7 @@ const reportService = {
                 key.toUpperCase().replace(/_REMOVAL/g, ""),
                 xPos + 8,
                 yPosition + 18,
-                { width: removalBoxWidth - 16, align: "center" }
+                { width: removalBoxWidth - 16, align: "center" },
               );
 
             // Removal percentage
@@ -674,16 +675,15 @@ const reportService = {
 
         // Table with better spacing
         const tableTop = yPosition;
-        const colWidths = [105, 52, 58, 52, 58, 52, 58];
-        const colX = [40, 145, 197, 255, 307, 365, 417];
+        const colWidths = [120, 65, 70, 65, 70, 75];
+        const colX = [40, 160, 225, 295, 360, 435];
         const headers = [
           "Waktu",
           "pH In",
           "TDS In",
           "pH Out",
           "TDS Out",
-          "Turb In",
-          "Turb Out",
+          "Temp Out",
         ];
 
         // Header with modern design
@@ -750,39 +750,33 @@ const reportService = {
             row.inlet_ph != null ? row.inlet_ph.toFixed(2) : "-",
             colX[1],
             yPosition + 4,
-            { width: colWidths[1], align: "center" }
+            { width: colWidths[1], align: "center" },
           );
           doc.text(
             row.inlet_tds != null ? row.inlet_tds.toFixed(0) : "-",
             colX[2],
             yPosition + 4,
-            { width: colWidths[2], align: "center" }
+            { width: colWidths[2], align: "center" },
           );
           doc.text(
             row.outlet_ph != null ? row.outlet_ph.toFixed(2) : "-",
             colX[3],
             yPosition + 4,
-            { width: colWidths[3], align: "center" }
+            { width: colWidths[3], align: "center" },
           );
           doc.text(
             row.outlet_tds != null ? row.outlet_tds.toFixed(0) : "-",
             colX[4],
             yPosition + 4,
-            { width: colWidths[4], align: "center" }
+            { width: colWidths[4], align: "center" },
           );
           doc.text(
-            row.inlet_turbidity != null ? row.inlet_turbidity.toFixed(1) : "-",
+            row.outlet_temperature != null
+              ? row.outlet_temperature.toFixed(1) + "°C"
+              : "-",
             colX[5],
             yPosition + 4,
-            { width: colWidths[5], align: "center" }
-          );
-          doc.text(
-            row.outlet_turbidity != null
-              ? row.outlet_turbidity.toFixed(1)
-              : "-",
-            colX[6],
-            yPosition + 4,
-            { width: colWidths[6], align: "center" }
+            { width: colWidths[5], align: "center" },
           );
 
           yPosition += 16;
@@ -820,7 +814,7 @@ const reportService = {
               `Halaman ${i + 1} dari ${pages.count}`,
               0,
               doc.page.height - 45,
-              { align: "center", width: doc.page.width }
+              { align: "center", width: doc.page.width },
             );
 
           // Footer text
@@ -831,7 +825,7 @@ const reportService = {
               "Water Quality Monitoring System - IPAL Teknik Lingkungan",
               0,
               doc.page.height - 32,
-              { align: "center", width: doc.page.width }
+              { align: "center", width: doc.page.width },
             );
 
           doc

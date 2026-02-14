@@ -57,7 +57,7 @@ router.get(
  *
  * Query params:
  *   - ipal_id: number (optional)
- *   - sensor_type: string (optional, e.g., 'ph', 'tds', 'turbidity', 'temperature')
+ *   - sensor_type: string (optional, e.g., 'ph', 'tds', 'temperature')
  *   - status: 'active' | 'inactive' | 'maintenance' (optional)
  *   - limit: number (default: 50)
  */

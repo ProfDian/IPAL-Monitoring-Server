@@ -7,25 +7,21 @@ const readingSchema = Joi.object({
   device_id: Joi.string().optional().default("unknown"),
   inlet: Joi.object({
     ph: Joi.number().min(0).max(14).required(),
-    tds: Joi.number().min(0).max(2000).required(),
-    turbidity: Joi.number().min(0).max(4000).required(),
+    tds: Joi.number().min(0).max(10000).required(),
     temperature: Joi.number().min(-10).max(60).required(),
   }).required(),
   outlet: Joi.object({
     ph: Joi.number().min(0).max(14).required(),
-    tds: Joi.number().min(0).max(2000).required(),
-    turbidity: Joi.number().min(0).max(4000).required(),
+    tds: Joi.number().min(0).max(10000).required(),
     temperature: Joi.number().min(-10).max(60).required(),
   }).required(),
   // ⭐ TAMBAH INI - sensor_mapping
   sensor_mapping: Joi.object({
     inlet_ph: Joi.string().optional(),
     inlet_tds: Joi.string().optional(),
-    inlet_turbidity: Joi.string().optional(),
     inlet_temperature: Joi.string().optional(),
     outlet_ph: Joi.string().optional(),
     outlet_tds: Joi.string().optional(),
-    outlet_turbidity: Joi.string().optional(),
     outlet_temperature: Joi.string().optional(),
   }).optional(),
 });

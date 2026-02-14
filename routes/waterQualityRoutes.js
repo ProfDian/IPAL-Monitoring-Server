@@ -37,13 +37,11 @@ const { requireAuth, requireAdmin } = require("../middleware/authMiddleware");
  *   "data": {
  *     "ph": 7.2,
  *     "tds": 150,
- *     "turbidity": 5.3,
  *     "temperature": 28.5
  *   },
  *   "sensor_mapping": {
  *     "inlet_ph": "sensor-ph-inlet-001",
  *     "inlet_tds": "sensor-tds-inlet-002",
- *     "inlet_turbidity": "sensor-turb-inlet-003",
  *     "inlet_temperature": "sensor-temp-inlet-004"
  *   }
  * }
@@ -149,7 +147,7 @@ router.get("/readings/:id", requireAuth, waterQualityController.getReadingById);
 router.get(
   "/buffer-status",
   requireAuth,
-  waterQualityController.getBufferStatus
+  waterQualityController.getBufferStatus,
 );
 
 /**
@@ -177,7 +175,7 @@ router.get(
 router.get(
   "/incomplete",
   requireAuth,
-  waterQualityController.checkIncompleteReadings
+  waterQualityController.checkIncompleteReadings,
 );
 
 /**
@@ -207,7 +205,7 @@ router.delete(
   "/cleanup-buffer",
   requireAuth,
   requireAdmin,
-  waterQualityController.cleanupBuffer
+  waterQualityController.cleanupBuffer,
 );
 
 /**

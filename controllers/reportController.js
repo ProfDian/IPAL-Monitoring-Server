@@ -57,7 +57,7 @@ exports.exportReport = async (req, res) => {
     // Parse parameters
     const paramList = parameters
       ? parameters.split(",").map((p) => p.trim())
-      : ["ph", "tds", "turbidity", "temperature"];
+      : ["ph", "tds", "temperature"];
 
     const filters = {
       ipal_id,
@@ -105,7 +105,7 @@ exports.exportReport = async (req, res) => {
         fileName = `water_quality_report_${start_date}_${end_date}.xlsx`;
 
         console.log(
-          `✅ Excel generated: ${fileName} (${fileContent.length} bytes)`
+          `✅ Excel generated: ${fileName} (${fileContent.length} bytes)`,
         );
       } else if (format === "pdf") {
         console.log("📄 Generating PDF...");
@@ -130,7 +130,7 @@ exports.exportReport = async (req, res) => {
 
       if (format !== "csv" && fileContent.length === 0) {
         throw new Error(
-          `${format.toUpperCase()} generation returned empty buffer`
+          `${format.toUpperCase()} generation returned empty buffer`,
         );
       }
 
@@ -138,7 +138,7 @@ exports.exportReport = async (req, res) => {
       res.setHeader("Content-Type", contentType);
       res.setHeader(
         "Content-Disposition",
-        `attachment; filename="${fileName}"`
+        `attachment; filename="${fileName}"`,
       );
 
       if (format === "csv") {
@@ -153,7 +153,7 @@ exports.exportReport = async (req, res) => {
           format === "csv"
             ? Buffer.byteLength(fileContent, "utf8")
             : fileContent.length
-        } bytes)`
+        } bytes)`,
       );
 
       // Send file
@@ -222,7 +222,7 @@ exports.previewReport = async (req, res) => {
 
     const paramList = parameters
       ? parameters.split(",").map((p) => p.trim())
-      : ["ph", "tds", "turbidity", "temperature"];
+      : ["ph", "tds", "temperature"];
 
     const filters = {
       ipal_id,

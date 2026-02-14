@@ -105,7 +105,7 @@ async function submitReading(data) {
     const inputValidation = validateReadingInput(data);
     if (!inputValidation.valid) {
       throw new Error(
-        `Validation failed: ${inputValidation.errors.join(", ")}`
+        `Validation failed: ${inputValidation.errors.join(", ")}`,
       );
     }
 
@@ -182,7 +182,7 @@ async function tryMerge(ipalId) {
     // Step 1: Get unmerged readings from buffer
     const unmergedReadings = await getWaterQualityModel().getUnmergedReadings(
       ipalId,
-      CONFIG.MERGE_TIME_WINDOW
+      CONFIG.MERGE_TIME_WINDOW,
     );
 
     if (unmergedReadings.length === 0) {
@@ -192,14 +192,14 @@ async function tryMerge(ipalId) {
 
     // Step 2: Separate inlet and outlet
     const inletReadings = unmergedReadings.filter(
-      (r) => r.location === "inlet"
+      (r) => r.location === "inlet",
     );
     const outletReadings = unmergedReadings.filter(
-      (r) => r.location === "outlet"
+      (r) => r.location === "outlet",
     );
 
     console.log(
-      `   Found: ${inletReadings.length} inlet, ${outletReadings.length} outlet`
+      `   Found: ${inletReadings.length} inlet, ${outletReadings.length} outlet`,
     );
 
     // Step 3: Check if we have complete pair
@@ -210,11 +210,11 @@ async function tryMerge(ipalId) {
 
     // Step 4: Select latest from each location
     const latestInlet = inletReadings.sort(
-      (a, b) => b.timestamp?.toMillis() - a.timestamp?.toMillis()
+      (a, b) => b.timestamp?.toMillis() - a.timestamp?.toMillis(),
     )[0];
 
     const latestOutlet = outletReadings.sort(
-      (a, b) => b.timestamp?.toMillis() - a.timestamp?.toMillis()
+      (a, b) => b.timestamp?.toMillis() - a.timestamp?.toMillis(),
     )[0];
 
     console.log("✅ Complete pair found!");
@@ -303,9 +303,8 @@ async function processCompleteReading(mergedData) {
     // STEP 3: SAVE TO FINAL COLLECTION
     // ========================================
     console.log("💾 Saving to water_quality_readings...");
-    const readingId = await getWaterQualityModel().saveToFinalReadings(
-      completeData
-    );
+    const readingId =
+      await getWaterQualityModel().saveToFinalReadings(completeData);
 
     console.log(`✅ Reading saved: ${readingId}`);
 
@@ -319,7 +318,7 @@ async function processCompleteReading(mergedData) {
       alertsCreated = await createAlertsForViolations(
         readingId,
         ipal_id,
-        fuzzyResult.violations
+        fuzzyResult.violations,
       );
       console.log(`✅ Created ${alertsCreated.length} alert(s)`);
     } else {
@@ -331,7 +330,7 @@ async function processCompleteReading(mergedData) {
     // ========================================
     if (alertsCreated.length > 0) {
       const criticalAlerts = alertsCreated.filter(
-        (a) => a.severity === "critical" || a.severity === "high"
+        (a) => a.severity === "critical" || a.severity === "high",
       );
 
       if (criticalAlerts.length > 0) {
@@ -357,7 +356,7 @@ async function processCompleteReading(mergedData) {
       sensor_mapping,
       inlet,
       outlet,
-      fuzzyResult.status
+      fuzzyResult.status,
     );
     console.log("✅ Sensors updated");
 
@@ -369,7 +368,7 @@ async function processCompleteReading(mergedData) {
       fuzzy_analysis: fuzzyResult,
       alerts_created: alertsCreated.length,
       notifications_sent: alertsCreated.filter(
-        (a) => a.severity === "critical" || a.severity === "high"
+        (a) => a.severity === "critical" || a.severity === "high",
       ).length,
     };
   } catch (error) {
@@ -442,7 +441,7 @@ async function sendNotificationsForAlerts(alerts) {
     }
 
     console.log(
-      `📤 Preparing to send notifications for ${alerts.length} alert(s)...`
+      `📤 Preparing to send notifications for ${alerts.length} alert(s)...`,
     );
 
     // Filter critical/high alerts only (optional)
@@ -458,7 +457,7 @@ async function sendNotificationsForAlerts(alerts) {
     }
 
     console.log(
-      `📧 Sending notifications for ${alertsToSend.length} alert(s)...`
+      `📧 Sending notifications for ${alertsToSend.length} alert(s)...`,
     );
 
     // ⭐ CALL NEW ORCHESTRATOR
@@ -472,7 +471,7 @@ async function sendNotificationsForAlerts(alerts) {
       console.log("✅ Notifications sent successfully");
       console.log(`   Email: ${result.results?.email?.success ? "✅" : "❌"}`);
       console.log(
-        `   FCM: ${result.results?.fcm?.success ? "✅" : "⏭️ Skipped"}`
+        `   FCM: ${result.results?.fcm?.success ? "✅" : "⏭️ Skipped"}`,
       );
     } else {
       console.log("⚠️  Notification sending had issues:", result.message);
@@ -517,8 +516,6 @@ function validateReadingInput(data) {
     if (typeof data.data.ph === "undefined") errors.push("data.ph is required");
     if (typeof data.data.tds === "undefined")
       errors.push("data.tds is required");
-    if (typeof data.data.turbidity === "undefined")
-      errors.push("data.turbidity is required");
     if (typeof data.data.temperature === "undefined")
       errors.push("data.temperature is required");
   }
@@ -568,17 +565,17 @@ async function cleanupExpiredBuffer() {
 async function checkIncompleteReadings(ipalId) {
   try {
     const cutoffTime = new Date(
-      Date.now() - CONFIG.ALERT_INCOMPLETE_AFTER * 60 * 1000
+      Date.now() - CONFIG.ALERT_INCOMPLETE_AFTER * 60 * 1000,
     );
 
     const unmerged = await getWaterQualityModel().getUnmergedReadings(
       ipalId,
-      CONFIG.ALERT_INCOMPLETE_AFTER
+      CONFIG.ALERT_INCOMPLETE_AFTER,
     );
 
     if (unmerged.length > 0) {
       console.warn(
-        `⚠️ Found ${unmerged.length} incomplete reading(s) > ${CONFIG.ALERT_INCOMPLETE_AFTER} minutes old`
+        `⚠️ Found ${unmerged.length} incomplete reading(s) > ${CONFIG.ALERT_INCOMPLETE_AFTER} minutes old`,
       );
 
       // TODO: Alert admin about incomplete readings
@@ -620,7 +617,7 @@ async function updateSensorsFromReading(
   sensor_mapping,
   inlet,
   outlet,
-  qualityStatus
+  qualityStatus,
 ) {
   try {
     if (!sensor_mapping || Object.keys(sensor_mapping).length === 0) {
@@ -647,12 +644,12 @@ async function updateSensorsFromReading(
         console.log(
           `📅 Using timestamp from reading: ${
             timestamp?.toDate ? timestamp.toDate().toISOString() : timestamp
-          }`
+          }`,
         );
       }
     } catch (err) {
       console.warn(
-        "⚠️ Could not fetch reading timestamp, using server timestamp"
+        "⚠️ Could not fetch reading timestamp, using server timestamp",
       );
     }
 
@@ -666,7 +663,6 @@ async function updateSensorsFromReading(
       const inletMapping = {
         inlet_ph: inlet.ph,
         inlet_tds: inlet.tds,
-        inlet_turbidity: inlet.turbidity,
         inlet_temperature: inlet.temperature,
       };
 
@@ -691,7 +687,6 @@ async function updateSensorsFromReading(
       const outletMapping = {
         outlet_ph: outlet.ph,
         outlet_tds: outlet.tds,
-        outlet_turbidity: outlet.turbidity,
         outlet_temperature: outlet.temperature,
       };
 
@@ -719,12 +714,11 @@ async function updateSensorsFromReading(
     console.log(`📦 Updating ${sensorsToUpdate.length} sensor(s)...`);
 
     // Batch update untuk efficiency
-    const result = await getSensorModel().batchUpdateSensorsReading(
-      sensorsToUpdate
-    );
+    const result =
+      await getSensorModel().batchUpdateSensorsReading(sensorsToUpdate);
 
     console.log(
-      `✅ Sensors updated: ${result.success} success, ${result.failed} failed, ${result.skipped} skipped`
+      `✅ Sensors updated: ${result.success} success, ${result.failed} failed, ${result.skipped} skipped`,
     );
 
     return result;

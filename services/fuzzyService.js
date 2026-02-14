@@ -1,635 +1,663 @@
 /**
  * ========================================
- * FUZZY LOGIC SERVICE
+ * FUZZY SERVICE - BAKU MUTU PEMERINTAH
  * ========================================
- * Water quality analysis using threshold-based scoring
- * Analyzes outlet quality AND inlet→outlet treatment efficiency
+ * Integrated from fuzzylogiccapstone with backward-compatible API.
+ * Sesuai Standar Pemerintah untuk Limbah Industri.
  *
  * Features:
- * - Outlet quality scoring (pH, TDS, Turbidity, Temperature)
- * - IPAL efficiency checks (reduction percentages)
+ * - Outlet quality scoring (pH, TDS, Temperature) with 35/40/25 weights
+ * - IPAL effectiveness checks (TDS reduction, pH change)
+ * - Sensor health detection & fallback replacement
+ * - Composite scoring: 60% outlet + 30% effectiveness + 10% sensor health
  * - Violation detection with severity levels
- * - Recommendations generation
+ * - Recommendations generation with priority/category
  */
 
-// Note: fuzzyLogicHelper.js available for advanced fuzzy (Phase 2)
-// Currently using simple threshold-based scoring (Phase 1)
+// ========================================
+// KONFIGURASI BAKU MUTU PEMERINTAH
+// ========================================
+const STANDARDS = {
+  ph: { min: 6.0, max: 9.0, optimal: [6.5, 8.5] },
+  tds: { max: 4000, optimal: 1000 },
+  temperature: { max: 40, optimal: [25, 30] },
+};
 
-/**
- * ========================================
- * BAKU MUTU THRESHOLDS
- * ========================================
- * Reference: Peraturan Menteri LHK
- * Synchronized with fuzzyLogicHelper.js thresholds
- */
+const BAKU_MUTU = {
+  pemerintah: STANDARDS,
+  golongan_2: STANDARDS, // Backward compatibility
+};
 
+// Target efektivitas IPAL
+const EFFECTIVENESS_TARGET = {
+  tds_reduction: 15, // Minimal 15% penurunan TDS
+  ph_increase: [0.3, 1.5],
+};
+
+// Backward-compatible alias (some code references THRESHOLDS)
 const THRESHOLDS = {
   ph: {
-    min: 6.0,
-    max: 9.0,
-    optimal_min: 6.5,
-    optimal_max: 8.5,
+    min: STANDARDS.ph.min,
+    max: STANDARDS.ph.max,
+    optimal_min: STANDARDS.ph.optimal[0],
+    optimal_max: STANDARDS.ph.optimal[1],
   },
   tds: {
-    max: 500, // ppm (outlet baku mutu)
-    optimal_max: 300,
-    inlet_max: 2000, // inlet bisa lebih tinggi
-    min_reduction: 0.15, // TDS harus turun min 15%
-  },
-  turbidity: {
-    max: 25, // NTU (outlet baku mutu)
-    optimal_max: 5,
-    inlet_max: 400, // inlet bisa lebih tinggi
-    min_reduction: 0.5, // Turbidity harus turun min 50%
+    max: STANDARDS.tds.max,
+    optimal_max: STANDARDS.tds.optimal,
+    min_reduction: EFFECTIVENESS_TARGET.tds_reduction / 100,
   },
   temperature: {
-    min: 20, // °C
-    max: 30,
-    optimal_min: 25,
-    optimal_max: 28,
-    max_difference: 3, // Perbedaan inlet-outlet max 3°C
+    min: STANDARDS.temperature.optimal[0],
+    max: STANDARDS.temperature.max,
+    optimal_min: STANDARDS.temperature.optimal[0],
+    optimal_max: STANDARDS.temperature.optimal[1],
+    max_difference: 3,
   },
 };
 
-/**
- * ========================================
- * MAIN ANALYSIS FUNCTION
- * ========================================
- */
-
-/**
- * Analyze water quality data with fuzzy logic
- * @param {Object} inlet - Inlet sensor data { ph, tds, turbidity, temperature }
- * @param {Object} outlet - Outlet sensor data { ph, tds, turbidity, temperature }
- * @returns {Object} Analysis result with score, status, violations
- */
-async function analyze(inlet, outlet) {
-  try {
-    console.log("🧠 Starting fuzzy logic analysis...");
-    console.log("   Inlet:", inlet);
-    console.log("   Outlet:", outlet);
-
-    // Score based on outlet quality (baku mutu)
-    const score = calculateSimpleScore(outlet);
-    const status = determineStatus(score);
-
-    // Check outlet violations (baku mutu)
-    const outletViolations = checkViolations(outlet);
-
-    // Check efficiency violations (inlet→outlet comparison)
-    const efficiencyViolations = checkEfficiencyViolations(inlet, outlet);
-
-    // Combine all violations
-    const violations = [...outletViolations, ...efficiencyViolations];
-
-    const recommendations = generateRecommendations(violations, inlet, outlet);
-
-    const result = {
-      quality_score: score,
-      status: status,
-      violations: violations,
-      alert_count: violations.length,
-      recommendations: recommendations,
-      analysis_method: "threshold_with_efficiency",
-      efficiency: calculateEfficiency(inlet, outlet),
-    };
-
-    console.log("✅ Fuzzy analysis complete:");
-    console.log(`   Score: ${score}/100`);
-    console.log(`   Status: ${status}`);
-    console.log(
-      `   Violations: ${violations.length} (${outletViolations.length} outlet, ${efficiencyViolations.length} efficiency)`,
-    );
-
-    return result;
-  } catch (error) {
-    console.error("❌ Error in fuzzy analysis:", error);
-    throw error;
-  }
+// ========================================
+// HELPER FUNCTIONS
+// ========================================
+function getStatus(score) {
+  if (score >= 85) return "excellent";
+  if (score >= 70) return "good";
+  if (score >= 50) return "fair";
+  if (score >= 30) return "poor";
+  return "critical";
 }
 
-/**
- * Calculate IPAL treatment efficiency
- */
+// Alias for backward compatibility
+const determineStatus = getStatus;
+
+// ========================================
+// SENSOR HEALTH CHECK
+// ========================================
+function checkSensorHealth(inlet, outlet) {
+  const faults = [];
+  const params = ["ph", "tds", "temperature"];
+  const defaults = { ph: 7, tds: 500, temperature: 28 };
+
+  // Check inlet
+  params.forEach((p) => {
+    const val = inlet[p];
+    if (val === null || val === undefined || isNaN(val)) {
+      faults.push({
+        sensor: `inlet.${p}`,
+        location: "inlet",
+        parameter: p,
+        original_value: val,
+        replaced_with: defaults[p],
+        message: `Sensor inlet.${p} rusak`,
+      });
+      inlet[p] = defaults[p];
+    }
+  });
+
+  // Check outlet
+  params.forEach((p) => {
+    const val = outlet[p];
+    if (val === null || val === undefined || isNaN(val)) {
+      faults.push({
+        sensor: `outlet.${p}`,
+        location: "outlet",
+        parameter: p,
+        original_value: val,
+        replaced_with: defaults[p],
+        message: `Sensor outlet.${p} rusak`,
+      });
+      outlet[p] = defaults[p];
+    }
+  });
+
+  return {
+    count: faults.length,
+    confidence_score: ((6 - faults.length) / 6) * 100,
+    faults,
+    all_healthy: faults.length === 0,
+  };
+}
+
+// ========================================
+// SCORING
+// ========================================
+function scoreParameter(value, param) {
+  const std = STANDARDS[param];
+
+  if (param === "ph" || param === "temperature") {
+    const min = std.min || 0;
+    const max = std.max;
+    if (value < min || value > max) return 0;
+    if (value >= std.optimal[0] && value <= std.optimal[1]) return 100;
+    if (value < std.optimal[0]) {
+      return 100 - ((std.optimal[0] - value) / (std.optimal[0] - min)) * 50;
+    }
+    return 100 - ((value - std.optimal[1]) / (max - std.optimal[1])) * 50;
+  }
+
+  // TDS
+  if (value > std.max) return 0;
+  if (value <= std.optimal) return 100;
+  return 100 - ((value - std.optimal) / (std.max - std.optimal)) * 100;
+}
+
+function scoreOutlet(outlet) {
+  const scores = {
+    ph: scoreParameter(outlet.ph, "ph"),
+    tds: scoreParameter(outlet.tds, "tds"),
+    temperature: scoreParameter(outlet.temperature, "temperature"),
+  };
+
+  const total = scores.ph * 0.35 + scores.tds * 0.4 + scores.temperature * 0.25;
+
+  return {
+    score: Math.round(total),
+    breakdown: scores,
+    status: getStatus(Math.round(total)),
+  };
+}
+
+// Backward-compatible alias
+function calculateSimpleScore(data) {
+  return scoreOutlet(data).score;
+}
+
+// ========================================
+// EFFECTIVENESS
+// ========================================
+function checkEffectiveness(inlet, outlet) {
+  const reductions = {
+    tds: ((inlet.tds - outlet.tds) / inlet.tds) * 100,
+    ph_change: outlet.ph - inlet.ph,
+  };
+
+  const issues = [];
+
+  if (reductions.tds < EFFECTIVENESS_TARGET.tds_reduction) {
+    issues.push({ type: "LOW_TDS_REDUCTION", severity: "high" });
+  }
+  if (reductions.ph_change < 0.3 || reductions.ph_change > 1.5) {
+    issues.push({ type: "PH_CHANGE_ISSUE", severity: "medium" });
+  }
+
+  const score = Math.round(
+    (Math.min(reductions.tds / EFFECTIVENESS_TARGET.tds_reduction, 1) * 100 +
+      (reductions.ph_change >= 0.3 && reductions.ph_change <= 1.5 ? 100 : 50)) /
+      2,
+  );
+
+  return {
+    score,
+    reductions,
+    issues,
+    effective: issues.length === 0,
+    status: issues.length === 0 ? "effective" : "ineffective",
+  };
+}
+
+// Backward-compatible aliases
 function calculateEfficiency(inlet, outlet) {
   return {
     tds_reduction:
       inlet.tds > 0
         ? (((inlet.tds - outlet.tds) / inlet.tds) * 100).toFixed(1) + "%"
         : "N/A",
-    turbidity_reduction:
-      inlet.turbidity > 0
-        ? (
-            ((inlet.turbidity - outlet.turbidity) / inlet.turbidity) *
-            100
-          ).toFixed(1) + "%"
-        : "N/A",
     ph_change: (outlet.ph - inlet.ph).toFixed(2),
     temp_change: (outlet.temperature - inlet.temperature).toFixed(1) + "°C",
   };
 }
 
-/**
- * Check IPAL efficiency violations (inlet vs outlet)
- */
 function checkEfficiencyViolations(inlet, outlet) {
+  const eff = checkEffectiveness(inlet, outlet);
+  return eff.issues.map((issue) => ({
+    parameter: issue.type === "LOW_TDS_REDUCTION" ? "tds" : "ph",
+    location: "efficiency",
+    value:
+      issue.type === "LOW_TDS_REDUCTION"
+        ? eff.reductions.tds.toFixed(1)
+        : eff.reductions.ph_change.toFixed(2),
+    threshold:
+      issue.type === "LOW_TDS_REDUCTION"
+        ? EFFECTIVENESS_TARGET.tds_reduction
+        : "0.3-1.5",
+    condition:
+      issue.type === "LOW_TDS_REDUCTION"
+        ? "insufficient_reduction"
+        : "ph_change_issue",
+    severity: issue.severity,
+    message:
+      issue.type === "LOW_TDS_REDUCTION"
+        ? `Efisiensi TDS rendah (${eff.reductions.tds.toFixed(1)}%). IPAL harus mengurangi TDS minimal ${EFFECTIVENESS_TARGET.tds_reduction}%`
+        : `Perubahan pH ${eff.reductions.ph_change.toFixed(2)} tidak optimal (target: 0.3-1.5)`,
+  }));
+}
+
+function evaluateTreatmentEffectiveness(inlet, outlet) {
+  const eff = checkEffectiveness(inlet, outlet);
+  return {
+    isEffective: eff.effective,
+    improvements: { tds: eff.reductions.tds },
+  };
+}
+
+// ========================================
+// VIOLATIONS - BAKU MUTU PEMERINTAH
+// ========================================
+/**
+ * Check for threshold violations (backward-compatible format)
+ * Each violation includes location, condition, and numeric threshold
+ * for compatibility with createAlertsForViolations()
+ */
+function checkThresholdViolations(outlet) {
   const violations = [];
 
-  // Check TDS reduction (should reduce by at least 15%)
-  if (inlet.tds > 0) {
-    const tdsReduction = (inlet.tds - outlet.tds) / inlet.tds;
-    if (tdsReduction < THRESHOLDS.tds.min_reduction) {
-      violations.push({
-        parameter: "tds",
-        location: "efficiency",
-        value: (tdsReduction * 100).toFixed(1),
-        threshold: THRESHOLDS.tds.min_reduction * 100,
-        condition: "insufficient_reduction",
-        severity: tdsReduction < 0 ? "critical" : "high",
-        message: `Efisiensi TDS rendah (${(tdsReduction * 100).toFixed(1)}%). IPAL harus mengurangi TDS minimal ${THRESHOLDS.tds.min_reduction * 100}%`,
-      });
-    }
-  }
-
-  // Check Turbidity reduction (should reduce by at least 50%)
-  if (inlet.turbidity > 0) {
-    const turbReduction =
-      (inlet.turbidity - outlet.turbidity) / inlet.turbidity;
-    if (turbReduction < THRESHOLDS.turbidity.min_reduction) {
-      violations.push({
-        parameter: "turbidity",
-        location: "efficiency",
-        value: (turbReduction * 100).toFixed(1),
-        threshold: THRESHOLDS.turbidity.min_reduction * 100,
-        condition: "insufficient_reduction",
-        severity: turbReduction < 0 ? "critical" : "high",
-        message: `Efisiensi Turbidity rendah (${(turbReduction * 100).toFixed(1)}%). IPAL harus mengurangi Turbidity minimal ${THRESHOLDS.turbidity.min_reduction * 100}%`,
-      });
-    }
-  }
-
-  // Check Temperature difference (max 3°C)
-  const tempDiff = Math.abs(outlet.temperature - inlet.temperature);
-  if (tempDiff > THRESHOLDS.temperature.max_difference) {
-    violations.push({
-      parameter: "temperature",
-      location: "efficiency",
-      value: tempDiff.toFixed(1),
-      threshold: THRESHOLDS.temperature.max_difference,
-      condition: "excessive_change",
-      severity: tempDiff > 5 ? "high" : "medium",
-      message: `Perubahan suhu terlalu besar (${tempDiff.toFixed(1)}°C). Maksimal ${THRESHOLDS.temperature.max_difference}°C`,
-    });
-  }
-
-  return violations;
-}
-
-/**
- * ========================================
- * SCORING FUNCTIONS (Phase 1: Simple)
- * ========================================
- */
-
-/**
- * Calculate simple quality score based on thresholds
- * Score: 0-100 (100 = excellent, 0 = very poor)
- */
-function calculateSimpleScore(data) {
-  let score = 100;
-  const deductions = [];
-
-  // 1. Check pH (weight: 25%)
-  const phScore = scorePH(data.ph);
-  const phDeduction = Math.round((100 - phScore) * 0.25);
-  score -= phDeduction;
-  if (phDeduction > 0) {
-    deductions.push({ parameter: "pH", deduction: phDeduction });
-  }
-
-  // 2. Check TDS (weight: 25%)
-  const tdsScore = scoreTDS(data.tds);
-  const tdsDeduction = Math.round((100 - tdsScore) * 0.25);
-  score -= tdsDeduction;
-  if (tdsDeduction > 0) {
-    deductions.push({ parameter: "TDS", deduction: tdsDeduction });
-  }
-
-  // 3. Check Turbidity (weight: 30%)
-  const turbidityScore = scoreTurbidity(data.turbidity);
-  const turbidityDeduction = Math.round((100 - turbidityScore) * 0.3);
-  score -= turbidityDeduction;
-  if (turbidityDeduction > 0) {
-    deductions.push({ parameter: "Turbidity", deduction: turbidityDeduction });
-  }
-
-  // 4. Check Temperature (weight: 20%)
-  const tempScore = scoreTemperature(data.temperature);
-  const tempDeduction = Math.round((100 - tempScore) * 0.2);
-  score -= tempDeduction;
-  if (tempDeduction > 0) {
-    deductions.push({ parameter: "Temperature", deduction: tempDeduction });
-  }
-
-  // Log deductions for debugging
-  if (deductions.length > 0) {
-    console.log("   Deductions:", deductions);
-  }
-
-  // Ensure score is within bounds
-  score = Math.max(0, Math.min(100, Math.round(score)));
-
-  return score;
-}
-
-/**
- * Score pH value (0-100)
- */
-function scorePH(ph) {
-  const { min, max, optimal_min, optimal_max } = THRESHOLDS.ph;
-
-  if (ph < min || ph > max) {
-    // Critical violation
-    return 0;
-  } else if (ph >= optimal_min && ph <= optimal_max) {
-    // Optimal range
-    return 100;
-  } else if (ph < optimal_min) {
-    // Below optimal but above minimum
-    const range = optimal_min - min;
-    const distance = optimal_min - ph;
-    return Math.round(100 - (distance / range) * 50);
-  } else {
-    // Above optimal but below maximum
-    const range = max - optimal_max;
-    const distance = ph - optimal_max;
-    return Math.round(100 - (distance / range) * 50);
-  }
-}
-
-/**
- * Score TDS value (0-100)
- */
-function scoreTDS(tds) {
-  const { max, optimal_max } = THRESHOLDS.tds;
-
-  if (tds > max) {
-    // Critical violation
-    return 0;
-  } else if (tds <= optimal_max) {
-    // Optimal range
-    return 100;
-  } else {
-    // Between optimal and max
-    const range = max - optimal_max;
-    const distance = tds - optimal_max;
-    return Math.round(100 - (distance / range) * 100);
-  }
-}
-
-/**
- * Score Turbidity value (0-100)
- */
-function scoreTurbidity(turbidity) {
-  const { max, optimal_max } = THRESHOLDS.turbidity;
-
-  if (turbidity > max) {
-    // Critical violation
-    return 0;
-  } else if (turbidity <= optimal_max) {
-    // Optimal range
-    return 100;
-  } else {
-    // Between optimal and max
-    const range = max - optimal_max;
-    const distance = turbidity - optimal_max;
-    return Math.round(100 - (distance / range) * 100);
-  }
-}
-
-/**
- * Score Temperature value (0-100)
- */
-function scoreTemperature(temp) {
-  const { min, max, optimal_min, optimal_max } = THRESHOLDS.temperature;
-
-  if (temp < min || temp > max) {
-    // Critical violation
-    return 0;
-  } else if (temp >= optimal_min && temp <= optimal_max) {
-    // Optimal range
-    return 100;
-  } else if (temp < optimal_min) {
-    // Below optimal but above minimum
-    const range = optimal_min - min;
-    const distance = optimal_min - temp;
-    return Math.round(100 - (distance / range) * 50);
-  } else {
-    // Above optimal but below maximum
-    const range = max - optimal_max;
-    const distance = temp - optimal_max;
-    return Math.round(100 - (distance / range) * 50);
-  }
-}
-
-/**
- * ========================================
- * STATUS DETERMINATION
- * ========================================
- */
-
-/**
- * Determine water quality status from score
- */
-function determineStatus(score) {
-  if (score >= 85) {
-    return "excellent";
-  } else if (score >= 70) {
-    return "good";
-  } else if (score >= 50) {
-    return "fair";
-  } else if (score >= 30) {
-    return "poor";
-  } else {
-    return "critical";
-  }
-}
-
-/**
- * ========================================
- * VIOLATION DETECTION
- * ========================================
- */
-
-/**
- * Check for threshold violations
- * Returns array of violations with details
- */
-function checkViolations(data) {
-  const violations = [];
-
-  // Check pH
-  if (data.ph < THRESHOLDS.ph.min || data.ph > THRESHOLDS.ph.max) {
+  // pH: 6.0 - 9.0
+  if (outlet.ph < 6.0 || outlet.ph > 9.0) {
+    const isBelow = outlet.ph < 6.0;
     violations.push({
       parameter: "ph",
       location: "outlet",
-      value: data.ph,
-      threshold:
-        data.ph < THRESHOLDS.ph.min ? THRESHOLDS.ph.min : THRESHOLDS.ph.max,
-      condition:
-        data.ph < THRESHOLDS.ph.min ? "below_minimum" : "above_maximum",
-      severity: determineSeverity("ph", data.ph),
-      message: `pH outlet (${data.ph.toFixed(2)}) ${
-        data.ph < THRESHOLDS.ph.min ? "di bawah" : "melebihi"
-      } batas aman (${
-        data.ph < THRESHOLDS.ph.min ? THRESHOLDS.ph.min : THRESHOLDS.ph.max
-      })`,
+      value: outlet.ph,
+      threshold: isBelow ? 6.0 : 9.0,
+      condition: isBelow ? "below_minimum" : "above_maximum",
+      message: `pH ${outlet.ph.toFixed(2)} di luar batas baku mutu (6.0-9.0)`,
+      severity:
+        Math.abs(outlet.ph - (isBelow ? 6.0 : 9.0)) > 1.0 ? "critical" : "high",
     });
   }
 
-  // Check TDS
-  if (data.tds > THRESHOLDS.tds.max) {
+  // TDS: ≤4000 mg/L
+  if (outlet.tds > 4000) {
     violations.push({
       parameter: "tds",
       location: "outlet",
-      value: data.tds,
-      threshold: THRESHOLDS.tds.max,
+      value: outlet.tds,
+      threshold: 4000,
       condition: "above_maximum",
-      severity: determineSeverity("tds", data.tds),
-      message: `TDS outlet (${data.tds.toFixed(1)} ppm) melebihi batas aman (${
-        THRESHOLDS.tds.max
-      } ppm)`,
+      message: `TDS ${outlet.tds.toFixed(1)} mg/L melebihi baku mutu (≤4000 mg/L)`,
+      severity: outlet.tds > 5000 ? "critical" : "high",
     });
   }
 
-  // Check Turbidity
-  if (data.turbidity > THRESHOLDS.turbidity.max) {
-    violations.push({
-      parameter: "turbidity",
-      location: "outlet",
-      value: data.turbidity,
-      threshold: THRESHOLDS.turbidity.max,
-      condition: "above_maximum",
-      severity: determineSeverity("turbidity", data.turbidity),
-      message: `Turbidity outlet (${data.turbidity.toFixed(
-        1,
-      )} NTU) melebihi batas aman (${THRESHOLDS.turbidity.max} NTU)`,
-    });
-  }
-
-  // Check Temperature
-  if (
-    data.temperature < THRESHOLDS.temperature.min ||
-    data.temperature > THRESHOLDS.temperature.max
-  ) {
+  // Temperature: ≤40°C
+  if (outlet.temperature > 40) {
     violations.push({
       parameter: "temperature",
       location: "outlet",
-      value: data.temperature,
-      threshold:
-        data.temperature < THRESHOLDS.temperature.min
-          ? THRESHOLDS.temperature.min
-          : THRESHOLDS.temperature.max,
-      condition:
-        data.temperature < THRESHOLDS.temperature.min
-          ? "below_minimum"
-          : "above_maximum",
-      severity: determineSeverity("temperature", data.temperature),
-      message: `Temperature outlet (${data.temperature.toFixed(1)}°C) ${
-        data.temperature < THRESHOLDS.temperature.min ? "di bawah" : "melebihi"
-      } batas aman (${
-        data.temperature < THRESHOLDS.temperature.min
-          ? THRESHOLDS.temperature.min
-          : THRESHOLDS.temperature.max
-      }°C)`,
+      value: outlet.temperature,
+      threshold: 40,
+      condition: "above_maximum",
+      message: `Suhu ${outlet.temperature.toFixed(1)}°C melebihi baku mutu (≤40°C)`,
+      severity: outlet.temperature > 45 ? "critical" : "medium",
     });
   }
 
   return violations;
 }
 
-/**
- * Determine severity level for a violation
- */
+// Backward-compatible alias
+const checkViolations = checkThresholdViolations;
+
 function determineSeverity(parameter, value) {
-  const threshold = THRESHOLDS[parameter];
-
   if (parameter === "ph") {
-    const deviation = Math.max(
-      Math.abs(value - threshold.min),
-      Math.abs(value - threshold.max),
-    );
-
+    const deviation = Math.max(Math.abs(value - 6.0), Math.abs(value - 9.0));
     if (deviation > 2.0) return "critical";
     if (deviation > 1.0) return "high";
     if (deviation > 0.5) return "medium";
     return "low";
   }
-
   if (parameter === "tds") {
-    const ratio = value / threshold.max;
+    const ratio = value / STANDARDS.tds.max;
     if (ratio > 2.0) return "critical";
     if (ratio > 1.5) return "high";
     if (ratio > 1.2) return "medium";
     return "low";
   }
-
-  if (parameter === "turbidity") {
-    const ratio = value / threshold.max;
-    if (ratio > 2.0) return "critical";
-    if (ratio > 1.5) return "high";
-    if (ratio > 1.2) return "medium";
-    return "low";
-  }
-
   if (parameter === "temperature") {
-    const deviation = Math.max(
-      Math.abs(value - threshold.min),
-      Math.abs(value - threshold.max),
-    );
-
+    const deviation = Math.abs(value - STANDARDS.temperature.max);
     if (deviation > 10) return "critical";
     if (deviation > 5) return "high";
     if (deviation > 3) return "medium";
     return "low";
   }
-
   return "low";
 }
 
-/**
- * ========================================
- * RECOMMENDATIONS
- * ========================================
- */
+// ========================================
+// RECOMMENDATIONS
+// ========================================
+function generateRecommendations(
+  outletScore,
+  effectiveness,
+  violations,
+  sensorHealth,
+) {
+  const recs = [];
 
-/**
- * Generate recommendations based on violations and data
- */
-function generateRecommendations(violations, inlet, outlet) {
-  const recommendations = [];
-
-  if (violations.length === 0) {
-    recommendations.push({
-      type: "maintenance",
-      priority: "low",
-      message: "Kualitas air baik. Lanjutkan pemeliharaan rutin IPAL.",
+  // Sensor faults - highest priority
+  if (sensorHealth.count > 0) {
+    recs.push({
+      priority: "URGENT",
+      category: "SENSOR",
+      type: "sensor",
+      action: `Perbaiki ${sensorHealth.count} sensor rusak segera`,
+      message: `Perbaiki ${sensorHealth.count} sensor rusak segera`,
     });
-    return recommendations;
   }
 
-  // Recommendations based on violations
-  violations.forEach((violation) => {
-    switch (violation.parameter) {
-      case "ph":
-        if (violation.value < THRESHOLDS.ph.min) {
-          recommendations.push({
-            type: "treatment",
-            priority: violation.severity,
-            message:
-              "pH terlalu rendah (asam). Pertimbangkan penambahan basa untuk menetralkan.",
-          });
-        } else {
-          recommendations.push({
-            type: "treatment",
-            priority: violation.severity,
-            message:
-              "pH terlalu tinggi (basa). Pertimbangkan penambahan asam untuk menetralkan.",
-          });
-        }
-        break;
+  // Critical violations - stop operations
+  if (violations.filter((v) => v.severity === "critical").length > 0) {
+    recs.push({
+      priority: "URGENT",
+      category: "SAFETY",
+      type: "treatment",
+      action: "STOP OPERASI! Pelanggaran baku mutu kritis terdeteksi",
+      message: "STOP OPERASI! Pelanggaran baku mutu kritis terdeteksi",
+    });
+  }
 
-      case "tds":
-        recommendations.push({
-          type: "treatment",
-          priority: violation.severity,
-          message:
-            "TDS tinggi. Periksa sistem filtrasi dan pertimbangkan pembersihan filter.",
-        });
-        break;
-
-      case "turbidity":
-        recommendations.push({
-          type: "treatment",
-          priority: violation.severity,
-          message: "Turbidity tinggi. Periksa sistem sedimentasi dan filtrasi.",
-        });
-        break;
-
-      case "temperature":
-        recommendations.push({
-          type: "monitoring",
-          priority: violation.severity,
-          message:
-            "Temperature di luar range normal. Monitor kondisi lingkungan.",
-        });
-        break;
+  // Specific parameter violations
+  violations.forEach((v) => {
+    if (v.parameter === "tds" && v.value > 4000) {
+      recs.push({
+        priority: "HIGH",
+        category: "TREATMENT",
+        type: "treatment",
+        action: `TDS ${v.value.toFixed(0)} mg/L > 4000 mg/L: Evaluasi sistem reverse osmosis atau ion exchange`,
+        message: `TDS tinggi. Periksa sistem filtrasi dan pertimbangkan pembersihan filter.`,
+      });
+    }
+    if (v.parameter === "ph" && (v.value < 6.0 || v.value > 9.0)) {
+      recs.push({
+        priority: "HIGH",
+        category: "TREATMENT",
+        type: "treatment",
+        action: `pH ${v.value.toFixed(2)} di luar 6.0-9.0: Sesuaikan dosis kimia netralisasi`,
+        message:
+          v.value < 6.0
+            ? "pH terlalu rendah (asam). Pertimbangkan penambahan basa untuk menetralkan."
+            : "pH terlalu tinggi (basa). Pertimbangkan penambahan asam untuk menetralkan.",
+      });
+    }
+    if (v.parameter === "temperature" && v.value > 40) {
+      recs.push({
+        priority: "MEDIUM",
+        category: "TREATMENT",
+        type: "monitoring",
+        action: `Suhu ${v.value.toFixed(1)}°C > 40°C: Periksa sistem pendingin dan heat exchanger`,
+        message:
+          "Temperature di luar range normal. Monitor kondisi lingkungan.",
+      });
     }
   });
 
-  // Check treatment effectiveness (inlet vs outlet)
-  const effectiveness = evaluateTreatmentEffectiveness(inlet, outlet);
-  if (!effectiveness.isEffective) {
-    recommendations.push({
+  // Low effectiveness
+  if (!effectiveness.effective) {
+    if (effectiveness.reductions.tds < EFFECTIVENESS_TARGET.tds_reduction) {
+      recs.push({
+        priority: "MEDIUM",
+        category: "MAINTENANCE",
+        type: "maintenance",
+        action: `Penurunan TDS hanya ${effectiveness.reductions.tds.toFixed(1)}% (target: ≥15%): Evaluasi proses biologis dan kimia`,
+        message:
+          "Efektivitas IPAL rendah. Lakukan inspeksi dan maintenance komprehensif.",
+      });
+    }
+    if (
+      effectiveness.reductions.ph_change < 0.3 ||
+      effectiveness.reductions.ph_change > 1.5
+    ) {
+      recs.push({
+        priority: "MEDIUM",
+        category: "MAINTENANCE",
+        type: "maintenance",
+        action: `Perubahan pH ${effectiveness.reductions.ph_change.toFixed(2)} tidak optimal (target: 0.3-1.5): Cek sistem netralisasi`,
+        message: "Perubahan pH tidak optimal. Cek sistem netralisasi.",
+      });
+    }
+  }
+
+  // All good
+  if (
+    outletScore.status === "excellent" &&
+    effectiveness.effective &&
+    violations.length === 0
+  ) {
+    recs.push({
+      priority: "LOW",
+      category: "MAINTENANCE",
       type: "maintenance",
-      priority: "high",
-      message:
-        "Efektivitas IPAL rendah. Lakukan inspeksi dan maintenance komprehensif.",
+      action:
+        "Sistem optimal sesuai baku mutu pemerintah. Lanjutkan pemeliharaan rutin.",
+      message: "Kualitas air baik. Lanjutkan pemeliharaan rutin IPAL.",
     });
   }
 
-  return recommendations;
+  return recs;
 }
 
+// ========================================
+// MAIN ANALYSIS
+// ========================================
 /**
- * Evaluate IPAL treatment effectiveness
+ * Analyze water quality data with fuzzy logic
+ * @param {Object} inlet - Inlet sensor data { ph, tds, temperature }
+ * @param {Object} outlet - Outlet sensor data { ph, tds, temperature }
+ * @returns {Object} Analysis result with score, status, violations
  */
-function evaluateTreatmentEffectiveness(inlet, outlet) {
-  const improvements = {
-    tds: ((inlet.tds - outlet.tds) / inlet.tds) * 100,
-    turbidity: ((inlet.turbidity - outlet.turbidity) / inlet.turbidity) * 100,
-  };
+async function analyze(inlet, outlet) {
+  try {
+    console.log("🧠 Analyzing water quality (Baku Mutu Pemerintah)...");
+    console.log("   Inlet:", inlet);
+    console.log("   Outlet:", outlet);
 
-  // Treatment is effective if TDS and turbidity reduced significantly
-  const isEffective = improvements.tds > 10 && improvements.turbidity > 20;
+    // Save original data before sensor health fix
+    const inletOriginal = { ...inlet };
+    const outletOriginal = { ...outlet };
 
-  return {
-    isEffective,
-    improvements,
-  };
+    // Check & fix faulty sensors
+    const sensorHealth = checkSensorHealth(inlet, outlet);
+
+    // Score outlet quality
+    const outletScore = scoreOutlet(outlet);
+
+    // Check effectiveness
+    const effectiveness = checkEffectiveness(inlet, outlet);
+
+    // Check baku mutu violations (backward-compatible format)
+    const violations = checkThresholdViolations(outlet);
+
+    // Generate recommendations
+    const recommendations = generateRecommendations(
+      outletScore,
+      effectiveness,
+      violations,
+      sensorHealth,
+    );
+
+    // Calculate composite final score
+    const finalScore = Math.round(
+      outletScore.score * 0.6 +
+        effectiveness.score * 0.3 +
+        sensorHealth.confidence_score * 0.1,
+    );
+
+    const status = getStatus(finalScore);
+
+    // Build alerts array
+    const alerts = [
+      ...sensorHealth.faults.map((f) => ({
+        type: "SENSOR_FAULT",
+        priority: "medium",
+        level: "WARNING",
+        message: f.message,
+      })),
+      ...effectiveness.issues.map((i) => ({
+        type: i.type,
+        priority: i.severity,
+        level: i.severity === "high" ? "CRITICAL" : "WARNING",
+        message: i.type,
+      })),
+      ...violations.map((v) => ({
+        type: "VIOLATION",
+        priority: v.severity,
+        level: v.severity === "critical" ? "CRITICAL" : "WARNING",
+        message: v.message,
+        threshold: v.threshold,
+      })),
+    ];
+
+    console.log("✅ Fuzzy analysis complete:");
+    console.log(`   Score: ${finalScore}/100`);
+    console.log(`   Status: ${status}`);
+    console.log(`   Violations: ${violations.length}`);
+
+    return {
+      // === Backward-compatible fields (used by waterQualityService) ===
+      quality_score: finalScore,
+      status: status,
+      violations: violations, // Top-level for createAlertsForViolations
+      alert_count: alerts.length,
+      recommendations: recommendations,
+      analysis_method: "simplified_fuzzy_logic",
+      efficiency: calculateEfficiency(inlet, outlet),
+
+      // === New enriched fields from capstone integration ===
+      input: { inlet: inletOriginal, outlet: outletOriginal },
+      processed: { inlet, outlet },
+      final_score: finalScore,
+      overall_status: status,
+
+      fuzzy_analysis: {
+        outlet: {
+          score: outletScore.score,
+          status: outletScore.status,
+          membership: outletScore.breakdown,
+          compliance: violations.length === 0,
+        },
+        effectiveness: {
+          score: effectiveness.score,
+          status: effectiveness.status,
+          membership: {},
+          reduction_rates: effectiveness.reductions,
+        },
+        scoring_weights: {
+          outlet_quality: 60,
+          effectiveness: 30,
+          sensor_health: 10,
+        },
+      },
+
+      outlet_quality: outletScore,
+      ipal_effectiveness: effectiveness,
+
+      sensor_status: {
+        ...sensorHealth,
+        faults: { count: sensorHealth.count, ...sensorHealth },
+      },
+      sensor_health: sensorHealth,
+
+      sensor_alert_count: sensorHealth.count,
+      fuzzy_alert_count: effectiveness.issues.length + violations.length,
+
+      compliance: {
+        is_compliant: violations.length === 0,
+        violations,
+        standard: "Baku Mutu Pemerintah",
+      },
+
+      alerts,
+
+      analyzed_at: new Date().toISOString(),
+      defuzzification_method: "weighted_average",
+      membership_type: "linear",
+      standard_used:
+        "Baku Mutu Pemerintah (pH: 6.0-9.0, TDS: ≤4000, Temp: ≤40)",
+    };
+  } catch (error) {
+    console.error("❌ Error in fuzzy analysis:", error);
+    throw error;
+  }
 }
 
-/**
- * ========================================
- * ADVANCED FUZZY LOGIC (Phase 2 - Future)
- * ========================================
- * For advanced fuzzy membership functions,
- * see: utils/fuzzyLogicHelper.js
- * Can be integrated when needed for more sophisticated analysis.
- */
+// ========================================
+// FORMAT REPORT
+// ========================================
+function formatAnalysisSummary(result) {
+  const inp = result.input?.inlet || {};
+  const out = result.input?.outlet || {};
 
-/**
- * ========================================
- * EXPORTS
- * ========================================
- */
+  const fmt = (val, decimals = 1) => {
+    if (val === null || val === undefined || isNaN(val)) return "N/A";
+    return Number(val).toFixed(decimals);
+  };
 
+  return `
+📊 ANALISIS KUALITAS AIR LIMBAH
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+📋 BAKU MUTU PEMERINTAH:
+   • pH: 6.0 - 9.0
+   • TDS: ≤4000 mg/L
+   • Suhu: ≤40°C
+
+🎯 SKOR: ${result.quality_score}/100 (${result.status.toUpperCase()})
+
+🔥 INLET:  pH=${fmt(inp.ph, 2)} | TDS=${fmt(inp.tds)} | Temp=${fmt(inp.temperature)}
+🔤 OUTLET: pH=${fmt(out.ph, 2)} | TDS=${fmt(out.tds)} | Temp=${fmt(out.temperature)}
+
+📊 OUTLET QUALITY: ${result.outlet_quality.score}/100 (${result.outlet_quality.status})
+   ${out.ph >= 6.0 && out.ph <= 9.0 ? "✅" : "❌"} pH: ${fmt(out.ph, 2)} ${out.ph >= 6.0 && out.ph <= 9.0 ? "" : "(MELEBIHI BAKU MUTU)"}
+   ${out.tds <= 4000 ? "✅" : "❌"} TDS: ${fmt(out.tds)} mg/L ${out.tds <= 4000 ? "" : "(MELEBIHI BAKU MUTU)"}
+   ${out.temperature <= 40 ? "✅" : "❌"} Suhu: ${fmt(out.temperature)}°C ${out.temperature <= 40 ? "" : "(MELEBIHI BAKU MUTU)"}
+
+⚙️ IPAL EFFECTIVENESS: ${result.ipal_effectiveness.score}/100 (${result.ipal_effectiveness.status})
+   • TDS Reduction: ${fmt(result.ipal_effectiveness.reductions.tds)}% (target: ≥15%)
+   • pH Change: ${fmt(result.ipal_effectiveness.reductions.ph_change, 2)} (target: 0.3-1.5)
+
+🔧 SENSORS: ${result.sensor_health?.count === 0 ? "✅ All Healthy" : `⚠️ ${result.sensor_health?.count} Faulty`}
+${result.sensor_health?.faults?.length > 0 ? result.sensor_health.faults.map((f) => `   • ${f.sensor}: ${f.original_value} → ${f.replaced_with}`).join("\n") : ""}
+
+${result.compliance.violations.length > 0 ? `🚨 PELANGGARAN BAKU MUTU (${result.compliance.violations.length}):\n${result.compliance.violations.map((v, i) => `   ${i + 1}. [${v.severity.toUpperCase()}] ${v.message}`).join("\n")}` : "✅ SESUAI BAKU MUTU PEMERINTAH"}
+
+${result.alerts.length > 0 ? `🚨 ALERTS (${result.alerts.length}):\n${result.alerts.map((a, i) => `   ${i + 1}. [${a.priority.toUpperCase()}] ${a.message}`).join("\n")}` : "✅ No alerts"}
+
+${result.recommendations.length > 0 ? `📋 REKOMENDASI TINDAKAN:\n${result.recommendations.map((r, i) => `   ${i + 1}. [${r.priority}] ${r.action}`).join("\n")}` : ""}
+
+📅 ${result.analyzed_at}
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+`;
+}
+
+// ========================================
+// EXPORTS
+// ========================================
 module.exports = {
-  // Main function
+  // Main functions
   analyze,
+  formatAnalysisSummary,
 
-  // Helper functions (exported for testing)
+  // Helper functions (exported for testing & backward compatibility)
   calculateSimpleScore,
   determineStatus,
   checkViolations,
+  checkThresholdViolations,
   checkEfficiencyViolations,
   calculateEfficiency,
+  checkEffectiveness,
+  checkSensorHealth,
+  scoreParameter,
+  scoreOutlet,
   determineSeverity,
   generateRecommendations,
   evaluateTreatmentEffectiveness,
 
-  // Thresholds (exported for reference)
+  // Constants (exported for reference)
   THRESHOLDS,
+  STANDARDS,
+  BAKU_MUTU,
+  EFFECTIVENESS_TARGET,
 };
 
-console.log("📦 fuzzyService (with efficiency checks) loaded");
+console.log(
+  "📦 fuzzyService.js loaded (Baku Mutu Pemerintah - 3 Parameters) ✅",
+);
