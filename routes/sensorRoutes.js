@@ -34,20 +34,8 @@ router.get(
   sensorController.getReadings,
 );
 
-/**
- * GET /api/sensors/readings/latest/:ipal_id
- * Get latest reading per IPAL (AUTH required)
- * Cache: 20 seconds (latest data needs to be fresh)
- */
-router.get(
-  "/readings/latest/:ipal_id",
-  requireAuth,
-  cacheMiddleware(20),
-  sensorController.getLatestReading,
-);
-
 // ========================================
-// SENSOR MANAGEMENT (NEW - CRUD Sensors)
+// SENSOR MANAGEMENT (CRUD Sensors)
 // ========================================
 
 /**
@@ -122,18 +110,6 @@ router.get(
   requireAuth,
   cacheMiddleware(30),
   sensorController.getSensorStatus,
-);
-
-/**
- * GET /api/sensors/ipal/:ipal_id
- * Get all sensors for specific IPAL
- * Cache: 60 seconds
- */
-router.get(
-  "/ipal/:ipal_id",
-  requireAuth,
-  cacheMiddleware(60),
-  sensorController.getSensorsByIpal,
 );
 
 /**

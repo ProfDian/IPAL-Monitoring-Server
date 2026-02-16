@@ -1,28 +1,14 @@
 /**
  * ========================================
- * AUTH CONTROLLER (UPDATED)
+ * AUTH CONTROLLER (REFACTORED)
  * ========================================
- * Menambahkan getProfile function
- * This extends your existing authController.js
+ * Thin controller layer - delegates business logic to authService
  */
 
-const { admin, db } = require("../config/firebase-config");
-const jwt = require("jsonwebtoken");
-const axios = require("axios");
-require("dotenv").config();
-
-const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key-change-this";
-const FIREBASE_API_KEY = process.env.FIREBASE_API_KEY;
-
-// Debug
-console.log(
-  "🔑 Firebase API Key loaded:",
-  FIREBASE_API_KEY ? "✅ Yes" : "❌ No",
-);
-console.log("🔑 JWT Secret loaded:", JWT_SECRET ? "✅ Yes" : "❌ No");
+const authService = require("../services/authService");
 
 /**
- * LOGIN (EXISTING - keep as is)
+ * LOGIN
  */
 exports.login = async (req, res) => {
   try {
@@ -38,119 +24,7 @@ exports.login = async (req, res) => {
       });
     }
 
-    // Cek API Key tersedia
-    if (!FIREBASE_API_KEY) {
-      console.error("❌ FIREBASE_API_KEY not set in .env file!");
-      return res.status(500).json({
-        success: false,
-        message: "Server configuration error: Firebase API key missing",
-      });
-    }
-
-    // Verifikasi dengan Firebase REST API
-    let firebaseUser;
-    try {
-      const signInUrl = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${FIREBASE_API_KEY}`;
-
-      console.log("🔗 Calling Firebase Auth API...");
-
-      const response = await axios.post(signInUrl, {
-        email,
-        password,
-        returnSecureToken: true,
-      });
-
-      firebaseUser = response.data;
-      console.log("✅ Firebase Auth successful for UID:", firebaseUser.localId);
-    } catch (authError) {
-      console.error(
-        "❌ Firebase Auth failed:",
-        authError.response?.data || authError.message,
-      );
-
-      // Map Firebase error codes to user-friendly messages
-      const firebaseErrorCode = authError.response?.data?.error?.message;
-      let errorMessage = "Invalid email or password";
-
-      switch (firebaseErrorCode) {
-        case "EMAIL_NOT_FOUND":
-          errorMessage = "No account found with this email address";
-          break;
-        case "INVALID_PASSWORD":
-          errorMessage = "Incorrect password. Please try again";
-          break;
-        case "USER_DISABLED":
-          errorMessage = "This account has been disabled";
-          break;
-        case "TOO_MANY_ATTEMPTS_TRY_LATER":
-          errorMessage =
-            "Too many failed login attempts. Please try again later";
-          break;
-        case "INVALID_LOGIN_CREDENTIALS":
-          errorMessage =
-            "Invalid email or password. Please check your credentials";
-          break;
-        case "INVALID_EMAIL":
-          errorMessage = "Invalid email address format";
-          break;
-        default:
-          errorMessage =
-            "Login failed. Please check your credentials and try again";
-      }
-
-      return res.status(401).json({
-        success: false,
-        message: errorMessage,
-      });
-    }
-
-    // Ambil user data dari Firestore
-    console.log(
-      "🔍 Looking for user in Firestore with UID:",
-      firebaseUser.localId,
-    );
-
-    const userDoc = await db
-      .collection("users")
-      .doc(firebaseUser.localId)
-      .get();
-
-    console.log("📄 Document exists:", userDoc.exists);
-
-    let userData;
-
-    if (!userDoc.exists) {
-      console.error("❌ User authenticated but not found in Firestore!");
-      console.error("   UID:", firebaseUser.localId);
-      console.error("   Email:", firebaseUser.email);
-
-      return res.status(403).json({
-        success: false,
-        message: "Account not authorized. Please contact administrator.",
-        details:
-          "User exists in Authentication but not in user database. Administrator must create your account first.",
-      });
-    } else {
-      userData = userDoc.data();
-      console.log("✅ User data found:", {
-        email: userData.email,
-        role: userData.role,
-        username: userData.username,
-      });
-    }
-
-    // Generate custom JWT token
-    const token = jwt.sign(
-      {
-        uid: firebaseUser.localId,
-        email: userData.email,
-        role: userData.role,
-      },
-      JWT_SECRET,
-      { expiresIn: "6h" },
-    );
-
-    console.log("✅ Login successful for:", userData.email);
+    const { token, user } = await authService.authenticateUser(email, password);
 
     // Set token di cookie (optional)
     res.cookie("token", token, {
@@ -164,16 +38,14 @@ exports.login = async (req, res) => {
       success: true,
       message: "Login successful",
       token: token,
-      user: {
-        uid: firebaseUser.localId,
-        email: userData.email,
-        username: userData.username,
-        role: userData.role,
-        created_at: userData.created_at,
-        updated_at: userData.updated_at,
-      },
+      user: user,
     });
   } catch (error) {
+    if (error.status) {
+      const response = { success: false, message: error.message };
+      if (error.details) response.details = error.details;
+      return res.status(error.status).json(response);
+    }
     console.error("💥 Login error:", error);
     return res.status(500).json({
       success: false,
@@ -208,7 +80,7 @@ exports.logout = async (req, res) => {
 };
 
 /**
- * GET PROFILE (NEW)
+ * GET PROFILE
  * Endpoint: GET /auth/profile
  * Protected route - requires authentication
  */
@@ -218,29 +90,7 @@ exports.getProfile = async (req, res) => {
 
     console.log("👤 Getting profile for:", user.email);
 
-    // Get full user data from Firestore
-    const userDoc = await db.collection("users").doc(user.uid).get();
-
-    if (!userDoc.exists) {
-      console.error("❌ User not found in Firestore:", user.uid);
-      return res.status(404).json({
-        success: false,
-        message: "User profile not found",
-      });
-    }
-
-    const userData = userDoc.data();
-
-    // Prepare response data
-    const profileData = {
-      uid: user.uid,
-      email: userData.email,
-      username: userData.username || userData.email.split("@")[0],
-      role: userData.role,
-      created_at: userData.created_at,
-      fcm_token: userData.fcm_token || null,
-      fcm_token_updated_at: userData.fcm_token_updated_at || null,
-    };
+    const profileData = await authService.getUserProfile(user.uid);
 
     console.log("✅ Profile retrieved for:", user.email);
 
@@ -249,6 +99,12 @@ exports.getProfile = async (req, res) => {
       user: profileData,
     });
   } catch (error) {
+    if (error.status) {
+      return res.status(error.status).json({
+        success: false,
+        message: error.message,
+      });
+    }
     console.error("💥 Error getting profile:", error);
     return res.status(500).json({
       success: false,
@@ -267,7 +123,7 @@ exports.checkEmail = async (req, res) => {
   try {
     const { email } = req.body;
 
-    console.log("� Checking if email exists:", email);
+    console.log("📧 Checking if email exists:", email);
 
     // Validasi input
     if (!email) {
@@ -287,21 +143,7 @@ exports.checkEmail = async (req, res) => {
       });
     }
 
-    // Check in Firebase Authentication (NOT Firestore!)
-    let exists = false;
-    try {
-      const userRecord = await admin.auth().getUserByEmail(email);
-      exists = !!userRecord; // User exists in Firebase Auth
-      console.log("✅ Email found in Firebase Auth:", userRecord.uid);
-    } catch (authError) {
-      if (authError.code === "auth/user-not-found") {
-        console.log("❌ Email not found in Firebase Auth");
-        exists = false;
-      } else {
-        // Other errors (e.g., network issues)
-        throw authError;
-      }
-    }
+    const exists = await authService.checkEmailExists(email);
 
     return res.status(200).json({
       success: true,
@@ -321,4 +163,4 @@ exports.checkEmail = async (req, res) => {
   }
 };
 
-console.log("�📦 authController (with getProfile and checkEmail) loaded");
+console.log("📦 authController (refactored) loaded");

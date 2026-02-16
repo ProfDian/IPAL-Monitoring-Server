@@ -1,12 +1,12 @@
 /**
  * ========================================
- * ALERT CONTROLLER
+ * ALERT CONTROLLER - REFACTORED
  * ========================================
- * Controller untuk mengelola alerts
+ * Thin controller layer - delegates to alertService
  * Created by fuzzy logic dari water_quality_readings
  */
 
-const { db, admin } = require("../config/firebase-config");
+const alertService = require("../services/alertService");
 
 /**
  * GET ALL ALERTS dengan filter
@@ -14,73 +14,9 @@ const { db, admin } = require("../config/firebase-config");
  */
 exports.getAlerts = async (req, res) => {
   try {
-    const {
-      ipal_id,
-      status,
-      severity,
-      parameter,
-      location,
-      limit = 200,
-      start_after,
-    } = req.query;
+    const result = await alertService.getAlerts(req.query);
 
-    console.log("📊 Fetching alerts with filters:", {
-      ipal_id,
-      status,
-      severity,
-      parameter,
-      location,
-      limit,
-    });
-
-    let query = db.collection("alerts");
-
-    // Filter by IPAL ID
-    if (ipal_id) {
-      query = query.where("ipal_id", "==", parseInt(ipal_id));
-    }
-
-    // Filter by status (active/acknowledged/resolved)
-    if (status) {
-      query = query.where("status", "==", status);
-    }
-
-    // Filter by severity (low/medium/high/critical)
-    if (severity) {
-      query = query.where("severity", "==", severity);
-    }
-
-    // Filter by parameter (ph/tds/temperature)
-    if (parameter) {
-      query = query.where("parameter", "==", parameter);
-    }
-
-    // Filter by location (inlet/outlet/efficiency/anomaly)
-    if (location) {
-      query = query.where("location", "==", location);
-    }
-
-    // Order by timestamp descending (newest first)
-    query = query.orderBy("timestamp", "desc");
-
-    // Pagination - start after a specific document
-    if (start_after) {
-      const startAfterDoc = await db
-        .collection("alerts")
-        .doc(start_after)
-        .get();
-      if (startAfterDoc.exists) {
-        query = query.startAfter(startAfterDoc);
-      }
-    }
-
-    // Limit results
-    query = query.limit(parseInt(limit));
-
-    // Execute query
-    const snapshot = await query.get();
-
-    if (snapshot.empty) {
+    if (result.count === 0) {
       return res.status(200).json({
         success: true,
         message: "No alerts found",
@@ -89,37 +25,17 @@ exports.getAlerts = async (req, res) => {
       });
     }
 
-    // Map results
-    const alerts = [];
-    snapshot.forEach((doc) => {
-      alerts.push({
-        id: doc.id,
-        ...doc.data(),
-        timestamp: doc.data().timestamp?.toDate
-          ? doc.data().timestamp.toDate().toISOString()
-          : null,
-        created_at: doc.data().created_at?.toDate
-          ? doc.data().created_at.toDate().toISOString()
-          : null,
-      });
-    });
-
-    console.log(`✅ Found ${alerts.length} alerts`);
-
     return res.status(200).json({
       success: true,
-      count: alerts.length,
-      data: alerts,
-      pagination: {
-        limit: parseInt(limit),
-        last_doc_id: alerts[alerts.length - 1]?.id || null,
-      },
+      count: result.count,
+      data: result.alerts,
+      pagination: result.pagination,
     });
   } catch (error) {
     console.error("💥 Error fetching alerts:", error);
-    return res.status(500).json({
+    return res.status(error.status || 500).json({
       success: false,
-      message: "Failed to fetch alerts",
+      message: error.status ? error.message : "Failed to fetch alerts",
       error: error.message,
     });
   }
@@ -132,42 +48,7 @@ exports.getAlerts = async (req, res) => {
 exports.getAlertById = async (req, res) => {
   try {
     const { id } = req.params;
-
-    console.log(`📋 Fetching alert: ${id}`);
-
-    const alertDoc = await db.collection("alerts").doc(id).get();
-
-    if (!alertDoc.exists) {
-      return res.status(404).json({
-        success: false,
-        message: `Alert with ID ${id} not found`,
-      });
-    }
-
-    const alertData = {
-      id: alertDoc.id,
-      ...alertDoc.data(),
-      timestamp: alertDoc.data().timestamp?.toDate
-        ? alertDoc.data().timestamp.toDate().toISOString()
-        : null,
-      created_at: alertDoc.data().created_at?.toDate
-        ? alertDoc.data().created_at.toDate().toISOString()
-        : null,
-    };
-
-    // Optional: Get related reading data
-    if (alertData.reading_id) {
-      const readingDoc = await db
-        .collection("water_quality_readings")
-        .doc(alertData.reading_id)
-        .get();
-
-      if (readingDoc.exists) {
-        alertData.reading_data = readingDoc.data();
-      }
-    }
-
-    console.log(`✅ Alert found: ${id}`);
+    const alertData = await alertService.getAlertById(id);
 
     return res.status(200).json({
       success: true,
@@ -175,9 +56,9 @@ exports.getAlertById = async (req, res) => {
     });
   } catch (error) {
     console.error("💥 Error fetching alert:", error);
-    return res.status(500).json({
+    return res.status(error.status || 500).json({
       success: false,
-      message: "Failed to fetch alert",
+      message: error.status ? error.message : "Failed to fetch alert",
       error: error.message,
     });
   }
@@ -191,42 +72,18 @@ exports.markAsRead = async (req, res) => {
   try {
     const { id } = req.params;
     const user = req.user; // From auth middleware
-
-    console.log(`👁️ Marking alert as read: ${id}`);
-
-    const alertRef = db.collection("alerts").doc(id);
-    const alertDoc = await alertRef.get();
-
-    if (!alertDoc.exists) {
-      return res.status(404).json({
-        success: false,
-        message: `Alert with ID ${id} not found`,
-      });
-    }
-
-    // Update alert
-    await alertRef.update({
-      read: true,
-      read_by: user.uid,
-      read_at: admin.firestore.FieldValue.serverTimestamp(),
-      updated_at: admin.firestore.FieldValue.serverTimestamp(),
-    });
-
-    console.log(`✅ Alert marked as read: ${id}`);
+    const result = await alertService.markAsRead(id, user);
 
     return res.status(200).json({
       success: true,
       message: "Alert marked as read",
-      data: {
-        alert_id: id,
-        read_by: user.email,
-      },
+      data: result,
     });
   } catch (error) {
     console.error("💥 Error marking alert as read:", error);
-    return res.status(500).json({
+    return res.status(error.status || 500).json({
       success: false,
-      message: "Failed to mark alert as read",
+      message: error.status ? error.message : "Failed to mark alert as read",
       error: error.message,
     });
   }
@@ -242,65 +99,18 @@ exports.updateAlertStatus = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
     const user = req.user;
-
-    // Validate status
-    const validStatuses = ["active", "acknowledged", "resolved"];
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
-      });
-    }
-
-    console.log(`🔄 Updating alert status: ${id} → ${status}`);
-
-    const alertRef = db.collection("alerts").doc(id);
-    const alertDoc = await alertRef.get();
-
-    if (!alertDoc.exists) {
-      return res.status(404).json({
-        success: false,
-        message: `Alert with ID ${id} not found`,
-      });
-    }
-
-    // Update data
-    const updateData = {
-      status: status,
-      updated_by: user.uid,
-      updated_at: admin.firestore.FieldValue.serverTimestamp(),
-    };
-
-    // If status is acknowledged
-    if (status === "acknowledged") {
-      updateData.acknowledged_by = user.uid;
-      updateData.acknowledged_at = admin.firestore.FieldValue.serverTimestamp();
-    }
-
-    // If status is resolved
-    if (status === "resolved") {
-      updateData.resolved_by = user.uid;
-      updateData.resolved_at = admin.firestore.FieldValue.serverTimestamp();
-    }
-
-    await alertRef.update(updateData);
-
-    console.log(`✅ Alert status updated: ${id} → ${status}`);
+    const result = await alertService.updateAlertStatus(id, status, user);
 
     return res.status(200).json({
       success: true,
-      message: `Alert ${status}`,
-      data: {
-        alert_id: id,
-        status: status,
-        updated_by: user.email,
-      },
+      message: `Alert ${result.status}`,
+      data: result,
     });
   } catch (error) {
     console.error("💥 Error updating alert status:", error);
-    return res.status(500).json({
+    return res.status(error.status || 500).json({
       success: false,
-      message: "Failed to update alert status",
+      message: error.status ? error.message : "Failed to update alert status",
       error: error.message,
     });
   }
@@ -315,45 +125,18 @@ exports.deleteAlert = async (req, res) => {
   try {
     const { id } = req.params;
     const user = req.user;
-
-    // Check if user is admin
-    if (user.role !== "admin") {
-      return res.status(403).json({
-        success: false,
-        message: "Only admins can delete alerts",
-      });
-    }
-
-    console.log(`🗑️ Deleting alert: ${id}`);
-
-    const alertRef = db.collection("alerts").doc(id);
-    const alertDoc = await alertRef.get();
-
-    if (!alertDoc.exists) {
-      return res.status(404).json({
-        success: false,
-        message: `Alert with ID ${id} not found`,
-      });
-    }
-
-    // Delete alert
-    await alertRef.delete();
-
-    console.log(`✅ Alert deleted: ${id}`);
+    const result = await alertService.deleteAlert(id, user);
 
     return res.status(200).json({
       success: true,
       message: "Alert deleted successfully",
-      data: {
-        alert_id: id,
-        deleted_by: user.email,
-      },
+      data: result,
     });
   } catch (error) {
     console.error("💥 Error deleting alert:", error);
-    return res.status(500).json({
+    return res.status(error.status || 500).json({
       success: false,
-      message: "Failed to delete alert",
+      message: error.status ? error.message : "Failed to delete alert",
       error: error.message,
     });
   }
@@ -366,72 +149,7 @@ exports.deleteAlert = async (req, res) => {
 exports.getAlertStats = async (req, res) => {
   try {
     const { ipal_id } = req.query;
-
-    console.log(`📊 Fetching alert statistics for IPAL: ${ipal_id || "all"}`);
-
-    let query = db.collection("alerts");
-
-    if (ipal_id) {
-      query = query.where("ipal_id", "==", parseInt(ipal_id));
-    }
-
-    const snapshot = await query.get();
-
-    // Calculate statistics
-    const stats = {
-      total: snapshot.size,
-      by_status: {
-        active: 0,
-        acknowledged: 0,
-        resolved: 0,
-      },
-      by_severity: {
-        low: 0,
-        medium: 0,
-        high: 0,
-        critical: 0,
-      },
-      by_parameter: {
-        ph: 0,
-        tds: 0,
-        temperature: 0,
-      },
-      by_location: {
-        inlet: 0,
-        outlet: 0,
-        efficiency: 0,
-        anomaly: 0,
-      },
-    };
-
-    snapshot.forEach((doc) => {
-      const data = doc.data();
-
-      // Count by status
-      if (data.status) {
-        stats.by_status[data.status] = (stats.by_status[data.status] || 0) + 1;
-      }
-
-      // Count by severity
-      if (data.severity) {
-        stats.by_severity[data.severity] =
-          (stats.by_severity[data.severity] || 0) + 1;
-      }
-
-      // Count by parameter
-      if (data.parameter) {
-        stats.by_parameter[data.parameter] =
-          (stats.by_parameter[data.parameter] || 0) + 1;
-      }
-
-      // Count by location
-      if (data.location) {
-        stats.by_location[data.location] =
-          (stats.by_location[data.location] || 0) + 1;
-      }
-    });
-
-    console.log(`✅ Alert statistics calculated: ${stats.total} total alerts`);
+    const stats = await alertService.getAlertStats(ipal_id);
 
     return res.status(200).json({
       success: true,
@@ -439,9 +157,11 @@ exports.getAlertStats = async (req, res) => {
     });
   } catch (error) {
     console.error("💥 Error fetching alert statistics:", error);
-    return res.status(500).json({
+    return res.status(error.status || 500).json({
       success: false,
-      message: "Failed to fetch alert statistics",
+      message: error.status
+        ? error.message
+        : "Failed to fetch alert statistics",
       error: error.message,
     });
   }

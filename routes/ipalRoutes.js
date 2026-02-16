@@ -41,18 +41,6 @@ router.get(
   ipalController.getIpalById,
 );
 
-/**
- * GET /api/ipals/:ipal_id/stats
- * Get IPAL statistics
- * Cache: 3 minutes
- */
-router.get(
-  "/:ipal_id/stats",
-  requireAuth,
-  cacheMiddleware(180),
-  ipalController.getIpalStats,
-);
-
 // ========================================
 // WRITE OPERATIONS (Admin+)
 // ========================================

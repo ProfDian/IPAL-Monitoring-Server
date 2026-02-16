@@ -66,25 +66,6 @@ router.post("/logout", authController.logout);
  */
 router.post("/check-email", authController.checkEmail);
 
-/**
- * GET /auth/profile
- * Get current user profile (protected route)
- * Requires: Authorization header with JWT token
- *
- * Response:
- * {
- *   "success": true,
- *   "user": {
- *     "uid": "...",
- *     "email": "...",
- *     "username": "...",
- *     "role": "...",
- *     "created_at": "..."
- *   }
- * }
- */
-router.get("/profile", requireAuth, authController.getProfile);
-
 module.exports = router;
 
-console.log("📦 authRoutes (with profile and check-email) loaded");
+console.log("📦 authRoutes loaded");
