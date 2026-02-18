@@ -19,6 +19,10 @@ const { admin } = require("../config/firebase-config");
  * @param {Object} alertData - Data alert
  * @returns {Promise<Object>} Send result
  */
+// Frontend URL — harus di-set di Vercel env vars
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
+console.log(`📌 FCM Service - FRONTEND_URL: ${FRONTEND_URL}`);
+
 async function sendPushNotification(fcmToken, alertData) {
   try {
     if (!fcmToken) {
@@ -41,17 +45,15 @@ async function sendPushNotification(fcmToken, alertData) {
         parameter: alertData.parameter,
         severity: alertData.severity,
         timestamp: new Date().toISOString(),
-        click_action: `${
-          process.env.FRONTEND_URL || "http://localhost:5173"
-        }/alerts`,
+        click_action: `${FRONTEND_URL}/alerts`,
       },
       webpush: {
         fcmOptions: {
-          link: `${process.env.FRONTEND_URL || "http://localhost:5173"}/alerts`,
+          link: `${FRONTEND_URL}/alerts`,
         },
         notification: {
-          icon: "/icon-192x192.png", // Icon notification
-          badge: "/badge-72x72.png",
+          icon: `${FRONTEND_URL}/LogoIPAL.png`,
+          badge: `${FRONTEND_URL}/LogoIPAL.png`,
           vibrate: [200, 100, 200],
           requireInteraction: true, // Notification tetap muncul sampai user click
         },
@@ -78,7 +80,7 @@ async function sendPushNotification(fcmToken, alertData) {
       error.code === "messaging/registration-token-not-registered"
     ) {
       console.log(
-        "⚠️  Invalid or expired FCM token, should remove from database"
+        "⚠️  Invalid or expired FCM token, should remove from database",
       );
     }
 
@@ -106,7 +108,7 @@ async function sendPushNotificationToMultiple(fcmTokens, alertData) {
     }
 
     console.log(
-      `🔔 Sending push notification to ${fcmTokens.length} devices...`
+      `🔔 Sending push notification to ${fcmTokens.length} devices...`,
     );
 
     // Prepare multicast message
@@ -125,11 +127,11 @@ async function sendPushNotificationToMultiple(fcmTokens, alertData) {
       },
       webpush: {
         fcmOptions: {
-          link: `${process.env.FRONTEND_URL || "http://localhost:5173"}/alerts`,
+          link: `${FRONTEND_URL}/alerts`,
         },
         notification: {
-          icon: "/icon-192x192.png",
-          badge: "/badge-72x72.png",
+          icon: `${FRONTEND_URL}/LogoIPAL.png`,
+          badge: `${FRONTEND_URL}/LogoIPAL.png`,
           vibrate: [200, 100, 200],
           requireInteraction: alertData.severity === "critical",
         },
@@ -201,7 +203,10 @@ async function sendPushNotificationToTopic(topic, alertData) {
       },
       webpush: {
         fcmOptions: {
-          link: `${process.env.FRONTEND_URL || "http://localhost:5173"}/alerts`,
+          link: `${FRONTEND_URL}/alerts`,
+        },
+        notification: {
+          icon: `${FRONTEND_URL}/LogoIPAL.png`,
         },
       },
     };
