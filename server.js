@@ -44,8 +44,13 @@ const corsOptions = {
     }
   },
   methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-  allowedHeaders: ["Content-Type", "Authorization"],
-  exposedHeaders: ["Content-Disposition", "Content-Type"],
+  allowedHeaders: ["Content-Type", "Authorization", "Accept"],
+  exposedHeaders: [
+    "Content-Disposition",
+    "Content-Type",
+    "Content-Length",
+    "X-Content-Type-Options",
+  ],
   credentials: true,
   optionsSuccessStatus: 200,
 };

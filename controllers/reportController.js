@@ -1,6 +1,6 @@
 /**
  * ========================================
- * REPORT CONTROLLER V5 (FINAL FIX)
+ * REPORT CONTROLLER (REFACTORED)
  * ========================================
  */
 
@@ -134,36 +134,36 @@ exports.exportReport = async (req, res) => {
         );
       }
 
-      // Set headers
+      // ✅ FIX: Convert to proper Buffer for binary formats (Vercel compatibility)
+      let responseBody;
+      if (format === "csv") {
+        responseBody = Buffer.from(fileContent, "utf8");
+      } else {
+        responseBody = Buffer.isBuffer(fileContent)
+          ? fileContent
+          : Buffer.from(fileContent);
+      }
+
+      console.log(
+        `📤 Sending ${format.toUpperCase()}: ${fileName} (${responseBody.length} bytes)`,
+      );
+
+      // ✅ FIX: Set headers properly for Vercel serverless
+      res.status(200);
       res.setHeader("Content-Type", contentType);
       res.setHeader(
         "Content-Disposition",
         `attachment; filename="${fileName}"`,
       );
+      res.setHeader("Content-Length", responseBody.length);
+      // ✅ FIX: Prevent Vercel/CDN from caching or transforming binary response
+      res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate");
+      res.setHeader("X-Content-Type-Options", "nosniff");
 
-      if (format === "csv") {
-        res.setHeader("Content-Length", Buffer.byteLength(fileContent, "utf8"));
-      } else {
-        res.setHeader("Content-Length", fileContent.length);
-      }
+      // ✅ FIX: Use res.send(Buffer) instead of res.end(buffer, 'binary')
+      // res.end(buffer, 'binary') is deprecated and breaks on Vercel serverless
+      res.send(responseBody);
 
-      // ⚠️ CRITICAL LOG - HARUS MUNCUL!
-      console.log(
-        `📤 Sending ${format.toUpperCase()}: ${fileName} (${
-          format === "csv"
-            ? Buffer.byteLength(fileContent, "utf8")
-            : fileContent.length
-        } bytes)`,
-      );
-
-      // Send file
-      if (format === "csv") {
-        res.send(fileContent);
-      } else {
-        res.end(fileContent, "binary");
-      }
-
-      // ⚠️ CRITICAL LOG - HARUS MUNCUL!
       console.log(`✅ ${format.toUpperCase()} sent successfully!`);
     } catch (genError) {
       console.error(`❌ Error generating ${format}:`, genError);
