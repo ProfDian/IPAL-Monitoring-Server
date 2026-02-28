@@ -295,7 +295,9 @@ function generateAlertEmailHTML(alertData) {
           day: "numeric",
           hour: "2-digit",
           minute: "2-digit",
-        })}</td></tr>
+          hour12: false,
+          timeZone: "Asia/Jakarta",
+        })} WIB</td></tr>
         ${
           violationCount > 1
             ? `<tr><th>Jumlah Violations</th><td><span class="count-badge">${violationCount}</span></td></tr>`

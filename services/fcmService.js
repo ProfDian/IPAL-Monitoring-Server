@@ -20,7 +20,9 @@ const { admin } = require("../config/firebase-config");
  * @returns {Promise<Object>} Send result
  */
 // Frontend URL — harus di-set di Vercel env vars
-const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:5173";
+// Fallback ke production URL bukan localhost
+const FRONTEND_URL =
+  process.env.FRONTEND_URL || "https://ipal-monitoring-teklingundip.vercel.app";
 console.log(`📌 FCM Service - FRONTEND_URL: ${FRONTEND_URL}`);
 
 async function sendPushNotification(fcmToken, alertData) {
