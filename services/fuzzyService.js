@@ -507,16 +507,26 @@ async function analyze(inlet, outlet) {
       })),
     ];
 
+    // Categorize alerts for clarity
+    const effectiveness_issues = alerts.filter(
+      (a) => a.type !== "SENSOR_FAULT" && a.type !== "VIOLATION",
+    );
+    const sensor_faults = alerts.filter((a) => a.type === "SENSOR_FAULT");
+
     console.log("✅ Fuzzy analysis complete:");
     console.log(`   Score: ${finalScore}/100`);
     console.log(`   Status: ${status}`);
     console.log(`   Violations: ${violations.length}`);
+    console.log(`   Effectiveness issues: ${effectiveness_issues.length}`);
+    console.log(`   Sensor faults: ${sensor_faults.length}`);
 
     return {
       // === Backward-compatible fields (used by waterQualityService) ===
       quality_score: finalScore,
       status: status,
       violations: violations, // Top-level for createAlertsForViolations
+      effectiveness_issues: effectiveness_issues,
+      sensor_faults: sensor_faults,
       alert_count: violations.length,
       recommendations: recommendations,
       analysis_method: "simplified_fuzzy_logic",

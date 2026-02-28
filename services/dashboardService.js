@@ -514,6 +514,8 @@ async function getReadingsForChart(
 
       // Additional fuzzy data
       violations: data.fuzzy_analysis?.violations || [],
+      effectiveness_issues: data.fuzzy_analysis?.effectiveness_issues || [],
+      sensor_faults: data.fuzzy_analysis?.sensor_faults || [],
       recommendations: data.fuzzy_analysis?.recommendations || [],
       analysis_method: data.fuzzy_analysis?.analysis_method || null,
     };
