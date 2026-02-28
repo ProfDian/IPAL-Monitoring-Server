@@ -126,6 +126,7 @@ async function sendPushNotificationToMultiple(fcmTokens, alertData) {
         parameter: alertData.parameter,
         severity: alertData.severity,
         timestamp: new Date().toISOString(),
+        click_action: `${FRONTEND_URL}/alerts`,
       },
       webpush: {
         fcmOptions: {
