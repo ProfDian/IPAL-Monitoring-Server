@@ -517,7 +517,7 @@ async function analyze(inlet, outlet) {
       quality_score: finalScore,
       status: status,
       violations: violations, // Top-level for createAlertsForViolations
-      alert_count: alerts.length,
+      alert_count: violations.length,
       recommendations: recommendations,
       analysis_method: "simplified_fuzzy_logic",
       efficiency: calculateEfficiency(inlet, outlet),
