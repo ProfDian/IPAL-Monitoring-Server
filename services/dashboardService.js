@@ -472,21 +472,29 @@ async function getReadingsForChart(
       date: timestamp.toLocaleDateString("id-ID", {
         day: "2-digit",
         month: "short",
+        timeZone: "Asia/Jakarta",
       }),
       time: timestamp.toLocaleTimeString("id-ID", {
         hour: "2-digit",
         minute: "2-digit",
+        hour12: false,
+        timeZone: "Asia/Jakarta",
       }),
       date_display: timestamp.toLocaleDateString("id-ID", {
         day: "2-digit",
         month: "short",
         year: "numeric",
+        timeZone: "Asia/Jakarta",
       }),
       time_display: timestamp.toLocaleTimeString("id-ID", {
         hour: "2-digit",
         minute: "2-digit",
+        hour12: false,
+        timeZone: "Asia/Jakarta",
       }),
-      datetime_display: timestamp.toLocaleString("id-ID"),
+      datetime_display: timestamp.toLocaleString("id-ID", {
+        timeZone: "Asia/Jakarta",
+      }),
 
       // Inlet data
       inlet_ph: data.inlet?.ph || null,
@@ -532,7 +540,6 @@ module.exports = {
   getSummary,
   getOverview,
   getReadingsForChart,
-  // Export helpers for potential reuse by other services
   getLatestReading,
   getActiveAlertsCount,
   calculateStats,
