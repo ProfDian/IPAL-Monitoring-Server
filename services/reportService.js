@@ -794,49 +794,59 @@ const reportService = {
         // ADD PAGE NUMBERS AND FOOTER
         // ========================================
         const pages = doc.bufferedPageRange();
-        for (let i = 0; i < pages.count; i++) {
+        const totalPages = pages.count;
+        const pageW = doc.page.width;
+        const pageH = doc.page.height;
+
+        for (let i = 0; i < totalPages; i++) {
           doc.switchToPage(i);
+
+          // Reset cursor to safe position to avoid triggering auto page-add
+          doc.x = doc.page.margins.left;
+          doc.y = doc.page.margins.top;
 
           // Footer line
           doc
             .strokeColor(colors.primary)
             .lineWidth(1)
-            .moveTo(40, doc.page.height - 60)
-            .lineTo(572, doc.page.height - 60)
+            .moveTo(40, pageH - 50)
+            .lineTo(572, pageH - 50)
             .stroke();
 
-          // Page number
+          // Combined footer: "Halaman x/x | Water Quality Monitoring ... | Universitas Diponegoro"
+          const footerLine1 = `Halaman ${i + 1} dari ${totalPages}`;
+          const footerLine2 =
+            "Water Quality Monitoring System - IPAL Teknik Lingkungan | Universitas Diponegoro";
+
           doc
-            .fontSize(9)
+            .fontSize(8)
             .fillColor(colors.gray)
             .font("Helvetica")
-            .text(
-              `Halaman ${i + 1} dari ${pages.count}`,
-              0,
-              doc.page.height - 45,
-              { align: "center", width: doc.page.width },
-            );
+            .text(footerLine1, 0, pageH - 40, {
+              align: "center",
+              width: pageW,
+              lineBreak: false,
+            });
 
-          // Footer text
           doc
             .fontSize(7)
             .fillColor(colors.gray)
-            .text(
-              "Water Quality Monitoring System - IPAL Teknik Lingkungan",
-              0,
-              doc.page.height - 32,
-              { align: "center", width: doc.page.width },
-            );
-
-          doc
-            .fontSize(7)
-            .text("Universitas Diponegoro", 0, doc.page.height - 20, {
+            .font("Helvetica")
+            .text(footerLine2, 0, pageH - 28, {
               align: "center",
-              width: doc.page.width,
+              width: pageW,
+              lineBreak: false,
             });
+
+          // CRITICAL: Reset cursor back to top to prevent PDFKit from creating new pages
+          doc.x = doc.page.margins.left;
+          doc.y = doc.page.margins.top;
         }
 
         console.log("PDF content written, finalizing...");
+
+        // Flush all buffered pages before ending
+        doc.flushPages();
 
         // Finalize PDF
         doc.end();
