@@ -1,18 +1,26 @@
 /**
  * ========================================
- * FUZZY SERVICE - BAKU MUTU PEMERINTAH
+ * FUZZY SERVICE - FUZZY MAMDANI ENGINE
  * ========================================
- * Integrated from fuzzylogiccapstone with backward-compatible API.
+ * Facade/Adapter for fuzzylogiccapstone Mamdani engine.
+ * Backward-compatible API for ta-server controllers.
  * Sesuai Standar Pemerintah untuk Limbah Industri.
  *
  * Features:
- * - Outlet quality scoring (pH, TDS, Temperature) with 35/40/25 weights
- * - IPAL effectiveness checks (TDS reduction, pH change)
- * - Sensor health detection & fallback replacement
- * - Composite scoring: 60% outlet + 30% effectiveness + 10% sensor health
+ * - Fuzzy Mamdani inference (Gaussian membership, 27 rules, centroid defuzzification)
+ * - Dynamic weighted scoring (outlet quality + IPAL effectiveness)
+ * - Advanced sensor fault handling with 4 imputation strategies
+ * - 6-level alert system (CRITICAL → INFO)
  * - Violation detection with severity levels
  * - Recommendations generation with priority/category
+ * - Backward-compatible output for waterQualityService
  */
+
+// ========================================
+// MAMDANI ENGINE & SENSOR HANDLER IMPORTS
+// ========================================
+const mamdaniEngine = require("./fuzzy/fuzzyMamdani");
+const { preprocessSensorData } = require("./fuzzy/sensorFaultHandler");
 
 // ========================================
 // KONFIGURASI BAKU MUTU PEMERINTAH
@@ -437,37 +445,117 @@ function generateRecommendations(
 }
 
 // ========================================
-// MAIN ANALYSIS
+// SENSOR HEALTH ADAPTER
 // ========================================
 /**
- * Analyze water quality data with fuzzy logic
+ * Convert preprocessSensorData output to backward-compatible sensorHealth format
+ * used by generateRecommendations, alerts building, and result output.
+ */
+function buildSensorHealthFromPreprocessed(preprocessed) {
+  if (!preprocessed.has_faults) {
+    return {
+      count: 0,
+      confidence_score: 100,
+      faults: [],
+      all_healthy: true,
+    };
+  }
+
+  const faults = [];
+  if (preprocessed.imputation_log) {
+    preprocessed.imputation_log.forEach((log) => {
+      faults.push({
+        sensor: `${log.location}.${log.parameter}`,
+        location: log.location,
+        parameter: log.parameter,
+        original_value: log.original_value,
+        replaced_with: log.imputed_value,
+        message: `Sensor ${log.location}.${log.parameter} rusak`,
+      });
+    });
+  }
+
+  return {
+    count: preprocessed.faults?.count || faults.length,
+    confidence_score: preprocessed.confidence_score,
+    faults,
+    all_healthy: false,
+  };
+}
+
+// ========================================
+// MAIN ANALYSIS (FUZZY MAMDANI ENGINE)
+// ========================================
+/**
+ * Analyze water quality data with Fuzzy Mamdani engine.
+ * Uses Gaussian membership, 27 fuzzy rules, centroid defuzzification.
+ * Falls back to simple scoring if Mamdani engine fails.
+ *
  * @param {Object} inlet - Inlet sensor data { ph, tds, temperature }
  * @param {Object} outlet - Outlet sensor data { ph, tds, temperature }
  * @returns {Object} Analysis result with score, status, violations
  */
 async function analyze(inlet, outlet) {
   try {
-    console.log("🧠 Analyzing water quality (Baku Mutu Pemerintah)...");
+    console.log("🧠 Analyzing water quality (Fuzzy Mamdani)...");
     console.log("   Inlet:", inlet);
     console.log("   Outlet:", outlet);
 
-    // Save original data before sensor health fix
+    // Save original data before any processing
     const inletOriginal = { ...inlet };
     const outletOriginal = { ...outlet };
 
-    // Check & fix faulty sensors
-    const sensorHealth = checkSensorHealth(inlet, outlet);
+    // ===== STEP 1: Advanced Sensor Preprocessing =====
+    // Uses 4 imputation strategies: safe_default, historical_average,
+    // cross_parameter, inlet_outlet_relationship
+    let preprocessed;
+    let sensorHealth;
 
-    // Score outlet quality
+    try {
+      preprocessed = preprocessSensorData({ ...inlet }, { ...outlet });
+      sensorHealth = buildSensorHealthFromPreprocessed(preprocessed);
+      inlet = preprocessed.inlet;
+      outlet = preprocessed.outlet;
+    } catch (sensorError) {
+      console.warn(
+        "⚠️ Advanced sensor preprocessing failed, using simple fallback:",
+        sensorError.message,
+      );
+      sensorHealth = checkSensorHealth(inlet, outlet);
+      preprocessed = {
+        has_faults: sensorHealth.count > 0,
+        confidence_score: sensorHealth.confidence_score,
+      };
+    }
+
+    // ===== STEP 2: Run Mamdani Engine =====
+    // Gaussian membership → 27 fuzzy rules (MIN-MAX) → Centroid defuzzification
+    // → Dynamic weighting → 6-level alerts
+    let mamdaniResult;
+
+    try {
+      mamdaniResult = await mamdaniEngine.analyze(inlet, outlet);
+      console.log(
+        `   Mamdani Score: ${mamdaniResult.final_score}/100 (${mamdaniResult.overall_status})`,
+      );
+    } catch (mamdaniError) {
+      console.warn(
+        "⚠️ Mamdani engine failed, using simple scoring fallback:",
+        mamdaniError.message,
+      );
+      mamdaniResult = null;
+    }
+
+    // ===== STEP 3: Backward-compatible scoring =====
     const outletScore = scoreOutlet(outlet);
-
-    // Check effectiveness
     const effectiveness = checkEffectiveness(inlet, outlet);
 
-    // Check baku mutu violations (backward-compatible format)
+    // ===== STEP 4: Violations (backward-compatible format) =====
+    // Uses same checkThresholdViolations for exact format compatibility
+    // with createAlertsForViolations() in waterQualityService
     const violations = checkThresholdViolations(outlet);
 
-    // Generate recommendations
+    // ===== STEP 5: Recommendations =====
     const recommendations = generateRecommendations(
       outletScore,
       effectiveness,
@@ -475,17 +563,29 @@ async function analyze(inlet, outlet) {
       sensorHealth,
     );
 
-    // Calculate composite final score
-    const finalScore = Math.round(
-      outletScore.score * 0.6 +
-        effectiveness.score * 0.3 +
-        sensorHealth.confidence_score * 0.1,
-    );
+    // ===== STEP 6: Final Score =====
+    // Use Mamdani score if available, adjusted by sensor confidence
+    let finalScore;
+    if (mamdaniResult) {
+      finalScore = preprocessed.has_faults
+        ? Math.round(
+            mamdaniResult.final_score * (preprocessed.confidence_score / 100),
+          )
+        : mamdaniResult.final_score;
+    } else {
+      // Fallback: simple weighted average
+      finalScore = Math.round(
+        outletScore.score * 0.6 +
+          effectiveness.score * 0.3 +
+          sensorHealth.confidence_score * 0.1,
+      );
+    }
 
     const status = getStatus(finalScore);
 
-    // Build alerts array
-    const alerts = [
+    // ===== STEP 7: Build alerts =====
+    // Simple alerts for backward compatibility
+    const simpleAlerts = [
       ...sensorHealth.faults.map((f) => ({
         type: "SENSOR_FAULT",
         priority: "medium",
@@ -507,14 +607,15 @@ async function analyze(inlet, outlet) {
       })),
     ];
 
-    // Categorize alerts for clarity
-    const effectiveness_issues = alerts.filter(
+    const effectiveness_issues = simpleAlerts.filter(
       (a) => a.type !== "SENSOR_FAULT" && a.type !== "VIOLATION",
     );
-    const sensor_faults = alerts.filter((a) => a.type === "SENSOR_FAULT");
+    const sensor_faults = simpleAlerts.filter((a) => a.type === "SENSOR_FAULT");
 
     console.log("✅ Fuzzy analysis complete:");
-    console.log(`   Score: ${finalScore}/100`);
+    console.log(
+      `   Score: ${finalScore}/100 (${mamdaniResult ? "Mamdani" : "Simple"})`,
+    );
     console.log(`   Status: ${status}`);
     console.log(`   Violations: ${violations.length}`);
     console.log(`   Effectiveness issues: ${effectiveness_issues.length}`);
@@ -529,58 +630,90 @@ async function analyze(inlet, outlet) {
       sensor_faults: sensor_faults,
       alert_count: violations.length,
       recommendations: recommendations,
-      analysis_method: "simplified_fuzzy_logic",
+      analysis_method: mamdaniResult
+        ? "fuzzy_mamdani"
+        : "simplified_fuzzy_logic",
       efficiency: calculateEfficiency(inlet, outlet),
 
-      // === New enriched fields from capstone integration ===
+      // === Input/Output data ===
       input: { inlet: inletOriginal, outlet: outletOriginal },
       processed: { inlet, outlet },
       final_score: finalScore,
       overall_status: status,
 
-      fuzzy_analysis: {
-        outlet: {
-          score: outletScore.score,
-          status: outletScore.status,
-          membership: outletScore.breakdown,
-          compliance: violations.length === 0,
-        },
-        effectiveness: {
-          score: effectiveness.score,
-          status: effectiveness.status,
-          membership: {},
-          reduction_rates: effectiveness.reductions,
-        },
-        scoring_weights: {
-          outlet_quality: 60,
-          effectiveness: 30,
-          sensor_health: 10,
-        },
-      },
+      // === Fuzzy Mamdani analysis details ===
+      fuzzy_analysis: mamdaniResult
+        ? {
+            outlet: {
+              score: mamdaniResult.outlet_analysis.score,
+              status: mamdaniResult.outlet_analysis.status,
+              membership: mamdaniResult.outlet_analysis.fuzzy_membership,
+              compliance: mamdaniResult.outlet_analysis.compliance,
+            },
+            effectiveness: {
+              score: mamdaniResult.effectiveness_analysis.score,
+              status: mamdaniResult.effectiveness_analysis.status,
+              membership: mamdaniResult.effectiveness_analysis.fuzzy_membership,
+              reduction_rates:
+                mamdaniResult.effectiveness_analysis.reduction_rates,
+            },
+            scoring_weights: mamdaniResult.scoring_weights,
+          }
+        : {
+            outlet: {
+              score: outletScore.score,
+              status: outletScore.status,
+              membership: outletScore.breakdown,
+              compliance: violations.length === 0,
+            },
+            effectiveness: {
+              score: effectiveness.score,
+              status: effectiveness.status,
+              membership: {},
+              reduction_rates: effectiveness.reductions,
+            },
+            scoring_weights: {
+              outlet_quality: 60,
+              effectiveness: 30,
+              sensor_health: 10,
+            },
+          },
 
       outlet_quality: outletScore,
       ipal_effectiveness: effectiveness,
 
+      // === Sensor status ===
       sensor_status: {
         ...sensorHealth,
         faults: { count: sensorHealth.count, ...sensorHealth },
+        advanced:
+          preprocessed.has_faults && preprocessed.imputation_log
+            ? {
+                imputation_log: preprocessed.imputation_log,
+                imputation_strategies_used: true,
+              }
+            : null,
       },
       sensor_health: sensorHealth,
 
       sensor_alert_count: sensorHealth.count,
       fuzzy_alert_count: effectiveness.issues.length + violations.length,
 
+      // === Compliance ===
       compliance: {
         is_compliant: violations.length === 0,
         violations,
         standard: "Baku Mutu Pemerintah",
       },
 
-      alerts,
+      // === Alerts ===
+      alerts: simpleAlerts,
+      mamdani_alerts: mamdaniResult ? mamdaniResult.alerts : [],
 
+      // === Metadata ===
       analyzed_at: new Date().toISOString(),
-      defuzzification_method: "weighted_average",
-      membership_type: "linear",
+      defuzzification_method: mamdaniResult ? "centroid" : "weighted_average",
+      membership_type: mamdaniResult ? "gaussian" : "linear",
       standard_used:
         "Baku Mutu Pemerintah (pH: 6.0-9.0, TDS: ≤4000, Temp: ≤40)",
     };
@@ -669,5 +802,5 @@ module.exports = {
 };
 
 console.log(
-  "📦 fuzzyService.js loaded (Baku Mutu Pemerintah - 3 Parameters) ✅",
+  "📦 fuzzyService.js loaded (Fuzzy Mamdani Engine - 3 Parameters) ✅",
 );
