@@ -238,11 +238,18 @@ async function getSensorById(id) {
         return null;
       }
 
+      const data = doc.data();
       return {
         id: doc.id,
-        ...doc.data(),
-        added_at: doc.data().added_at?.toDate
-          ? doc.data().added_at.toDate().toISOString()
+        ...data,
+        added_at: data.added_at?.toDate
+          ? data.added_at.toDate().toISOString()
+          : null,
+        last_calibration: data.last_calibration?.toDate
+          ? data.last_calibration.toDate().toISOString()
+          : null,
+        last_updated_at: data.last_updated_at?.toDate
+          ? data.last_updated_at.toDate().toISOString()
           : null,
       };
     },
