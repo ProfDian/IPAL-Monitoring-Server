@@ -188,75 +188,388 @@ const reportService = {
       workbook.creator = "IPAL Monitoring System";
       workbook.created = new Date();
 
+      // --- Color palette ---
+      const colors = {
+        primary: "FF1B4F72", // Dark blue
+        primaryLight: "FFD6EAF8", // Light blue
+        accent: "FF2E86C1", // Medium blue
+        headerBg: "FF2C3E50", // Dark header
+        headerText: "FFFFFFFF", // White
+        border: "FFB0BEC5", // Gray border
+        zebraLight: "FFF8FBFD", // Very light blue
+        zebraWhite: "FFFFFFFF", // White
+        sectionBg: "FFEAF2F8", // Section blue
+        success: "FF27AE60", // Green
+        warning: "FFF39C12", // Orange
+      };
+
+      const thinBorder = {
+        top: { style: "thin", color: { argb: colors.border } },
+        left: { style: "thin", color: { argb: colors.border } },
+        bottom: { style: "thin", color: { argb: colors.border } },
+        right: { style: "thin", color: { argb: colors.border } },
+      };
+
+      // Helper: format ISO timestamp to readable WIB
+      const formatTimestamp = (isoString) => {
+        if (!isoString) return "-";
+        const date = new Date(isoString);
+        return (
+          date.toLocaleString("id-ID", {
+            timeZone: "Asia/Jakarta",
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false,
+          }) + " WIB"
+        );
+      };
+
+      // ============================================================
       // Sheet 1: Summary
+      // ============================================================
       const summarySheet = workbook.addWorksheet("Summary");
       summarySheet.columns = [
-        { header: "Metric", key: "metric", width: 35 },
-        { header: "Value", key: "value", width: 30 },
+        { key: "metric", width: 30 },
+        { key: "value", width: 25 },
+        { key: "extra", width: 25 },
       ];
 
-      summarySheet.addRow({
-        metric: "Report Generated",
-        value: new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }),
-      });
-      summarySheet.addRow({
-        metric: "Period",
-        value: `${filters.start_date} to ${filters.end_date}`,
-      });
-      summarySheet.addRow({
-        metric: "Total Readings",
-        value: summary.total_readings,
-      });
-      summarySheet.addRow({ metric: "", value: "" });
+      // Title row (merged)
+      summarySheet.mergeCells("A1:C1");
+      const titleRow = summarySheet.getRow(1);
+      titleRow.getCell(1).value = "IPAL Water Quality Monitoring Report";
+      titleRow.getCell(1).font = {
+        bold: true,
+        size: 16,
+        color: { argb: colors.headerText },
+      };
+      titleRow.getCell(1).fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: colors.primary },
+      };
+      titleRow.getCell(1).alignment = {
+        horizontal: "center",
+        vertical: "middle",
+      };
+      titleRow.height = 36;
+      // Fill merged cells background
+      titleRow.getCell(2).fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: colors.primary },
+      };
+      titleRow.getCell(3).fill = {
+        type: "pattern",
+        pattern: "solid",
+        fgColor: { argb: colors.primary },
+      };
 
-      summarySheet.addRow({ metric: "Parameter Statistics", value: "" });
+      // Subtitle
+      summarySheet.mergeCells("A2:C2");
+      const subtitleRow = summarySheet.getRow(2);
+      subtitleRow.getCell(1).value =
+        "Universitas Diponegoro - Laboratorium Teknik Lingkungan";
+      subtitleRow.getCell(1).font = {
+        size: 10,
+        italic: true,
+        color: { argb: colors.accent },
+      };
+      subtitleRow.getCell(1).alignment = { horizontal: "center" };
+      subtitleRow.height = 20;
+
+      // Blank row
+      summarySheet.addRow({});
+
+      // Report info section
+      const infoHeaderRow = summarySheet.addRow({
+        metric: "REPORT INFORMATION",
+        value: "",
+        extra: "",
+      });
+      infoHeaderRow.font = {
+        bold: true,
+        size: 11,
+        color: { argb: colors.headerText },
+      };
+      infoHeaderRow.eachCell((cell) => {
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: colors.accent },
+        };
+        cell.border = thinBorder;
+      });
+
+      const infoRows = [
+        {
+          metric: "Report Generated",
+          value:
+            new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }) +
+            " WIB",
+        },
+        {
+          metric: "Report Period",
+          value: `${filters.start_date || "-"}  s/d  ${filters.end_date || "-"}`,
+        },
+        { metric: "Total Readings", value: summary.total_readings },
+        {
+          metric: "Location",
+          value:
+            (filters.location || "both").charAt(0).toUpperCase() +
+            (filters.location || "both").slice(1),
+        },
+        {
+          metric: "Parameters",
+          value: (filters.parameters || []).join(", ").toUpperCase(),
+        },
+      ];
+      infoRows.forEach((r) => {
+        const row = summarySheet.addRow(r);
+        row.getCell(1).font = { bold: true, size: 10 };
+        row.getCell(2).font = { size: 10 };
+        row.eachCell((cell) => {
+          cell.border = thinBorder;
+        });
+      });
+
+      // Blank row
+      summarySheet.addRow({});
+
+      // Parameter statistics section
+      const statsHeaderRow = summarySheet.addRow({
+        metric: "PARAMETER",
+        value: "STATISTIC",
+        extra: "VALUE",
+      });
+      statsHeaderRow.font = {
+        bold: true,
+        size: 11,
+        color: { argb: colors.headerText },
+      };
+      statsHeaderRow.eachCell((cell) => {
+        cell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: colors.headerBg },
+        };
+        cell.border = thinBorder;
+        cell.alignment = { horizontal: "center" };
+      });
+
+      const paramLabels = {
+        inlet_ph: "Inlet - pH",
+        outlet_ph: "Outlet - pH",
+        inlet_tds: "Inlet - TDS (ppm)",
+        outlet_tds: "Outlet - TDS (ppm)",
+        inlet_temperature: "Inlet - Temperature (°C)",
+        outlet_temperature: "Outlet - Temperature (°C)",
+        tds_removal: "TDS Removal Efficiency",
+      };
+
+      let statsRowIdx = 0;
       Object.entries(summary.parameters).forEach(([key, stats]) => {
+        const label = paramLabels[key] || key.toUpperCase().replace(/_/g, " ");
         if (typeof stats === "object" && stats !== null) {
-          summarySheet.addRow({ metric: key.toUpperCase(), value: "" });
-          summarySheet.addRow({ metric: "  Average", value: stats.avg });
-          summarySheet.addRow({ metric: "  Minimum", value: stats.min });
-          summarySheet.addRow({ metric: "  Maximum", value: stats.max });
-          summarySheet.addRow({ metric: "  Count", value: stats.count });
+          ["Average", "Minimum", "Maximum", "Count"].forEach((stat, i) => {
+            const val =
+              stats[stat.toLowerCase().substring(0, 3)] ||
+              stats[stat.toLowerCase()];
+            const row = summarySheet.addRow({
+              metric: i === 0 ? label : "",
+              value: stat,
+              extra: val,
+            });
+            if (i === 0) row.getCell(1).font = { bold: true, size: 10 };
+            const bgColor =
+              statsRowIdx % 2 === 0 ? colors.zebraLight : colors.zebraWhite;
+            row.eachCell((cell) => {
+              cell.fill = {
+                type: "pattern",
+                pattern: "solid",
+                fgColor: { argb: bgColor },
+              };
+              cell.border = thinBorder;
+            });
+            statsRowIdx++;
+          });
         } else {
-          summarySheet.addRow({ metric: key.toUpperCase(), value: stats });
+          // Removal percentage etc.
+          const row = summarySheet.addRow({
+            metric: label,
+            value: "",
+            extra: stats,
+          });
+          row.getCell(1).font = {
+            bold: true,
+            size: 10,
+            color: { argb: colors.success },
+          };
+          row.getCell(3).font = {
+            bold: true,
+            size: 11,
+            color: { argb: colors.success },
+          };
+          row.eachCell((cell) => {
+            cell.fill = {
+              type: "pattern",
+              pattern: "solid",
+              fgColor: { argb: colors.sectionBg },
+            };
+            cell.border = thinBorder;
+          });
+          statsRowIdx++;
         }
       });
 
-      summarySheet.getRow(1).font = { bold: true, size: 12 };
-      summarySheet.getRow(5).font = { bold: true, size: 11 };
-      summarySheet.getRow(1).fill = {
-        type: "pattern",
-        pattern: "solid",
-        fgColor: { argb: "FFE0E0E0" },
-      };
-
+      // ============================================================
       // Sheet 2: Raw Data
+      // ============================================================
       const dataSheet = workbook.addWorksheet("Raw Data");
 
       if (data.length > 0) {
+        // Nice header labels
+        const headerLabels = {
+          timestamp: "Timestamp (WIB)",
+          reading_id: "Reading ID",
+          inlet_ph: "Inlet pH",
+          outlet_ph: "Outlet pH",
+          inlet_tds: "Inlet TDS (ppm)",
+          outlet_tds: "Outlet TDS (ppm)",
+          inlet_temperature: "Inlet Temp (°C)",
+          outlet_temperature: "Outlet Temp (°C)",
+        };
+
+        const headerWidths = {
+          timestamp: 28,
+          reading_id: 22,
+          inlet_ph: 14,
+          outlet_ph: 14,
+          inlet_tds: 18,
+          outlet_tds: 18,
+          inlet_temperature: 18,
+          outlet_temperature: 18,
+        };
+
         const headers = Object.keys(data[0]);
-        dataSheet.columns = headers.map((header) => ({
-          header: header.toUpperCase().replace(/_/g, " "),
-          key: header,
-          width: 20,
-        }));
 
-        data.forEach((row) => {
-          dataSheet.addRow(row);
-        });
-
-        dataSheet.getRow(1).font = { bold: true };
-        dataSheet.getRow(1).fill = {
+        // Title row
+        dataSheet.mergeCells(1, 1, 1, headers.length);
+        const dataTitleRow = dataSheet.getRow(1);
+        dataTitleRow.getCell(1).value = "Raw Sensor Data";
+        dataTitleRow.getCell(1).font = {
+          bold: true,
+          size: 14,
+          color: { argb: colors.headerText },
+        };
+        dataTitleRow.getCell(1).fill = {
           type: "pattern",
           pattern: "solid",
-          fgColor: { argb: "FF4472C4" },
+          fgColor: { argb: colors.primary },
         };
-        dataSheet.getRow(1).font = { bold: true, color: { argb: "FFFFFFFF" } };
+        dataTitleRow.getCell(1).alignment = {
+          horizontal: "center",
+          vertical: "middle",
+        };
+        dataTitleRow.height = 30;
+        // Fill all merged title cells
+        for (let c = 2; c <= headers.length; c++) {
+          dataTitleRow.getCell(c).fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: colors.primary },
+          };
+        }
 
-        dataSheet.autoFilter = {
-          from: { row: 1, column: 1 },
-          to: { row: 1, column: headers.length },
+        // Info row
+        dataSheet.mergeCells(2, 1, 2, headers.length);
+        const dataInfoRow = dataSheet.getRow(2);
+        dataInfoRow.getCell(1).value =
+          `Period: ${filters.start_date || "-"} s/d ${filters.end_date || "-"}  |  Total: ${data.length} readings`;
+        dataInfoRow.getCell(1).font = {
+          size: 9,
+          italic: true,
+          color: { argb: "FF666666" },
         };
+        dataInfoRow.getCell(1).alignment = { horizontal: "center" };
+
+        // Column headers (row 3)
+        dataSheet.columns = headers.map((header) => ({
+          key: header,
+          width: headerWidths[header] || 18,
+        }));
+
+        const headerRow = dataSheet.getRow(3);
+        headers.forEach((header, idx) => {
+          const cell = headerRow.getCell(idx + 1);
+          cell.value =
+            headerLabels[header] || header.toUpperCase().replace(/_/g, " ");
+          cell.font = {
+            bold: true,
+            size: 10,
+            color: { argb: colors.headerText },
+          };
+          cell.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: colors.headerBg },
+          };
+          cell.alignment = {
+            horizontal: "center",
+            vertical: "middle",
+            wrapText: true,
+          };
+          cell.border = thinBorder;
+        });
+        headerRow.height = 24;
+
+        // Data rows (starting from row 4)
+        data.forEach((row, rowIdx) => {
+          const excelRow = dataSheet.getRow(rowIdx + 4);
+          const bgColor =
+            rowIdx % 2 === 0 ? colors.zebraWhite : colors.zebraLight;
+
+          headers.forEach((header, colIdx) => {
+            const cell = excelRow.getCell(colIdx + 1);
+            let value = row[header];
+
+            // Format timestamp to human-readable WIB
+            if (header === "timestamp") {
+              value = formatTimestamp(value);
+            }
+
+            // Format numeric values to 2 decimal places
+            if (typeof value === "number" && header !== "reading_id") {
+              value = parseFloat(value.toFixed(2));
+            }
+
+            cell.value = value != null ? value : "-";
+            cell.fill = {
+              type: "pattern",
+              pattern: "solid",
+              fgColor: { argb: bgColor },
+            };
+            cell.border = thinBorder;
+            cell.alignment = {
+              horizontal: header === "timestamp" ? "left" : "center",
+              vertical: "middle",
+            };
+            cell.font = { size: 10 };
+          });
+        });
+
+        // Auto filter on header row (row 3)
+        dataSheet.autoFilter = {
+          from: { row: 3, column: 1 },
+          to: { row: 3, column: headers.length },
+        };
+
+        // Freeze panes: freeze title + info + header rows
+        dataSheet.views = [{ state: "frozen", ySplit: 3, activeCell: "A4" }];
       }
 
       // ✅ Return Buffer
