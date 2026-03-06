@@ -375,10 +375,14 @@ const reportService = {
       Object.entries(summary.parameters).forEach(([key, stats]) => {
         const label = paramLabels[key] || key.toUpperCase().replace(/_/g, " ");
         if (typeof stats === "object" && stats !== null) {
+          const statKeyMap = {
+            Average: "avg",
+            Minimum: "min",
+            Maximum: "max",
+            Count: "count",
+          };
           ["Average", "Minimum", "Maximum", "Count"].forEach((stat, i) => {
-            const val =
-              stats[stat.toLowerCase().substring(0, 3)] ||
-              stats[stat.toLowerCase()];
+            const val = stats[statKeyMap[stat]];
             const row = summarySheet.addRow({
               metric: i === 0 ? label : "",
               value: stat,
