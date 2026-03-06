@@ -335,7 +335,7 @@ const reportService = {
         doc.rect(0, 115, 612, 5).fill(colors.accent);
 
         // Logo image
-        const logoPath = path.join(__dirname, "..", "LabTeklingLogo.jpeg");
+        const logoPath = path.join(__dirname, "..", "Undip.png");
         if (fs.existsSync(logoPath)) {
           doc.image(logoPath, 30, 12, { width: 80, height: 80 });
         }
