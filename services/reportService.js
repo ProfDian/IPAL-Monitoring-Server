@@ -334,10 +334,30 @@ const reportService = {
         doc.rect(0, 0, 612, 120).fill(colors.primary);
         doc.rect(0, 115, 612, 5).fill(colors.accent);
 
-        // Logo image
+        // Logo with circular clip and white badge
         const logoPath = path.join(__dirname, "..", "Undip.png");
+        const logoSize = 72;
+        const logoCenterX = 30 + logoSize / 2 + 4;
+        const logoCenterY = 12 + logoSize / 2 + 4;
+        const badgeRadius = logoSize / 2 + 6;
+        // White circle badge
+        doc.save();
+        doc.circle(logoCenterX, logoCenterY, badgeRadius).fill(colors.white);
+        doc.restore();
+        // Clip image to circle
         if (fs.existsSync(logoPath)) {
-          doc.image(logoPath, 30, 12, { width: 80, height: 80 });
+          doc.save();
+          doc.circle(logoCenterX, logoCenterY, logoSize / 2).clip();
+          doc.image(
+            logoPath,
+            logoCenterX - logoSize / 2,
+            logoCenterY - logoSize / 2,
+            {
+              width: logoSize,
+              height: logoSize,
+            },
+          );
+          doc.restore();
         }
 
         // Title and subtitle
