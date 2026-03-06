@@ -7,6 +7,8 @@
 const { db, admin } = require("../config/firebase-config");
 const ExcelJS = require("exceljs");
 const PDFDocument = require("pdfkit");
+const path = require("path");
+const fs = require("fs");
 
 const reportService = {
   /**
@@ -195,7 +197,7 @@ const reportService = {
 
       summarySheet.addRow({
         metric: "Report Generated",
-        value: new Date().toLocaleString("id-ID"),
+        value: new Date().toLocaleString("id-ID", { timeZone: "Asia/Jakarta" }),
       });
       summarySheet.addRow({
         metric: "Period",
@@ -329,241 +331,296 @@ const reportService = {
         let yPosition = 20;
 
         // Header background with gradient effect
-        doc.rect(0, 0, 612, 100).fill(colors.primary);
-        doc.rect(0, 95, 612, 5).fill(colors.accent);
+        doc.rect(0, 0, 612, 120).fill(colors.primary);
+        doc.rect(0, 115, 612, 5).fill(colors.accent);
 
-        // Logo placeholder (circle with UNDIP text)
-        doc.circle(70, 50, 30).lineWidth(3).stroke(colors.white);
-
-        doc
-          .fontSize(10)
-          .fillColor(colors.white)
-          .font("Helvetica-Bold")
-          .text("UNDIP", 50, 42, { width: 40, align: "center" });
+        // Logo image
+        const logoPath = path.join(__dirname, "..", "LabTeklingLogo.jpeg");
+        if (fs.existsSync(logoPath)) {
+          doc.image(logoPath, 30, 12, { width: 80, height: 80 });
+        }
 
         // Title and subtitle
         doc
           .fillColor(colors.white)
-          .fontSize(22)
+          .fontSize(18)
           .font("Helvetica-Bold")
-          .text("LAPORAN KUALITAS AIR", 120, 25);
-
-        doc
-          .fontSize(11)
-          .font("Helvetica")
-          .text("IPAL Teknik Lingkungan", 120, 52);
+          .text("Water Quality Parameters Report", 120, 14);
 
         doc
           .fontSize(10)
           .font("Helvetica")
-          .text("Universitas Diponegoro", 120, 70);
+          .text(
+            "IPAL Environmental Engineering - Universitas Diponegoro",
+            120,
+            38,
+          );
 
-        yPosition = 115;
+        doc
+          .fontSize(8)
+          .font("Helvetica")
+          .text(
+            "Jl. Prof. Soedharto, S.H. Tembalang, Semarang, Indonesia, 1269",
+            120,
+            54,
+          );
+
+        doc
+          .fontSize(8)
+          .font("Helvetica")
+          .text("GKB Building, Faculty of Engineering, Undip", 120, 67);
+
+        doc
+          .fontSize(8)
+          .font("Helvetica")
+          .text("Tel: +62 822-6121-2832", 120, 80);
+
+        yPosition = 135;
 
         // ========================================
         // PROFESSIONAL INFO CARDS (3 columns)
         // ========================================
-        const cardWidth = 170;
-        const cardHeight = 55;
-        const cardGap = 6;
+        const cardWidth = 166;
+        const cardHeight = 60;
+        const cardGap = 8;
         const cardStartX = 40;
 
-        // Card 1: Period
-        doc
-          .roundedRect(cardStartX, yPosition, cardWidth, cardHeight, 5)
-          .fill(colors.lightGray);
+        // Helper: draw card with border
+        const drawCard = (x, y, bgColor, borderColor) => {
+          doc.roundedRect(x, y, cardWidth, cardHeight, 6).fill(bgColor);
+          doc
+            .roundedRect(x, y, cardWidth, cardHeight, 6)
+            .lineWidth(0.8)
+            .strokeColor(borderColor)
+            .stroke();
+        };
 
+        // Card 1: Period
+        drawCard(cardStartX, yPosition, colors.lightGray, "#d1d5db");
         doc
-          .fontSize(9)
+          .fontSize(8)
           .fillColor(colors.gray)
           .font("Helvetica-Bold")
-          .text("PERIODE", cardStartX + 10, yPosition + 10);
-
+          .text("REPORT PERIOD", cardStartX + 12, yPosition + 10, {
+            width: cardWidth - 24,
+          });
         doc
           .fontSize(10)
           .fillColor(colors.dark)
           .font("Helvetica-Bold")
-          .text(`${filters.start_date}`, cardStartX + 10, yPosition + 26, {
-            width: cardWidth - 20,
+          .text(filters.start_date || "-", cardStartX + 12, yPosition + 26, {
+            width: cardWidth - 24,
           });
-
         doc
-          .fontSize(9)
+          .fontSize(8)
           .fillColor(colors.gray)
           .font("Helvetica")
-          .text("sampai", cardStartX + 10, yPosition + 40, {
-            width: cardWidth - 20,
-          });
-
-        // Card 2: Total Readings
-        doc
-          .roundedRect(
-            cardStartX + cardWidth + cardGap,
-            yPosition,
-            cardWidth,
-            cardHeight,
-            5,
-          )
-          .fill("#e0f2fe");
-
-        doc
-          .fontSize(9)
-          .fillColor(colors.gray)
-          .font("Helvetica-Bold")
           .text(
-            "TOTAL DATA",
-            cardStartX + cardWidth + cardGap + 10,
-            yPosition + 10,
+            "to  " + (filters.end_date || "-"),
+            cardStartX + 12,
+            yPosition + 42,
+            { width: cardWidth - 24 },
           );
 
+        // Card 2: Total Readings
+        const card2X = cardStartX + cardWidth + cardGap;
+        drawCard(card2X, yPosition, "#e0f2fe", "#93c5fd");
         doc
-          .fontSize(22)
+          .fontSize(8)
+          .fillColor(colors.gray)
+          .font("Helvetica-Bold")
+          .text("TOTAL READINGS", card2X + 12, yPosition + 10, {
+            width: cardWidth - 24,
+          });
+        doc
+          .fontSize(24)
           .fillColor(colors.primary)
           .font("Helvetica-Bold")
           .text(
             summary.total_readings.toString(),
-            cardStartX + cardWidth + cardGap + 10,
-            yPosition + 25,
+            card2X + 12,
+            yPosition + 26,
+            { width: cardWidth - 24 },
           );
+        doc
+          .fontSize(8)
+          .fillColor(colors.gray)
+          .font("Helvetica")
+          .text("readings", card2X + 12, yPosition + 46, {
+            width: cardWidth - 24,
+          });
 
         // Card 3: Report Date
+        const card3X = cardStartX + (cardWidth + cardGap) * 2;
+        drawCard(card3X, yPosition, "#fef3c7", "#fcd34d");
         doc
-          .roundedRect(
-            cardStartX + (cardWidth + cardGap) * 2,
-            yPosition,
-            cardWidth,
-            cardHeight,
-            5,
-          )
-          .fill("#fef3c7");
-
-        doc
-          .fontSize(9)
+          .fontSize(8)
           .fillColor(colors.gray)
           .font("Helvetica-Bold")
-          .text(
-            "TANGGAL LAPORAN",
-            cardStartX + (cardWidth + cardGap) * 2 + 10,
-            yPosition + 10,
-          );
-
+          .text("GENERATED ON", card3X + 12, yPosition + 10, {
+            width: cardWidth - 24,
+          });
         doc
-          .fontSize(11)
+          .fontSize(10)
           .fillColor(colors.dark)
           .font("Helvetica-Bold")
           .text(
-            new Date().toLocaleDateString("id-ID", {
+            new Date().toLocaleDateString("en-GB", {
               day: "2-digit",
               month: "long",
               year: "numeric",
+              timeZone: "Asia/Jakarta",
             }),
-            cardStartX + (cardWidth + cardGap) * 2 + 10,
+            card3X + 12,
             yPosition + 28,
-            { width: cardWidth - 20 },
+            { width: cardWidth - 24 },
+          );
+        doc
+          .fontSize(8)
+          .fillColor(colors.gray)
+          .font("Helvetica")
+          .text(
+            new Date().toLocaleTimeString("en-GB", {
+              hour: "2-digit",
+              minute: "2-digit",
+              timeZone: "Asia/Jakarta",
+            }) + " WIB",
+            card3X + 12,
+            yPosition + 44,
+            { width: cardWidth - 24 },
           );
 
-        yPosition += cardHeight + 15;
+        yPosition += cardHeight + 20;
 
         // ========================================
-        // STATISTICS TABLE - OPTIMIZED
+        // HELPER: Draw section title with underline
         // ========================================
-        doc
-          .fontSize(13)
-          .fillColor(colors.dark)
-          .font("Helvetica-Bold")
-          .text("STATISTIK PARAMETER", 40, yPosition);
+        const drawSectionTitle = (title, y, color) => {
+          doc
+            .fontSize(12)
+            .fillColor(colors.dark)
+            .font("Helvetica-Bold")
+            .text(title, 40, y);
+          doc
+            .strokeColor(color)
+            .lineWidth(2.5)
+            .moveTo(40, y + 18)
+            .lineTo(40 + doc.widthOfString(title) + 10, y + 18)
+            .stroke();
+          return y + 28;
+        };
 
-        doc
-          .strokeColor(colors.primary)
-          .lineWidth(2.5)
-          .moveTo(40, yPosition + 20)
-          .lineTo(180, yPosition + 20)
-          .stroke();
+        // ========================================
+        // STATISTICS TABLE
+        // ========================================
+        yPosition = drawSectionTitle(
+          "PARAMETER STATISTICS",
+          yPosition,
+          colors.primary,
+        );
 
-        yPosition += 28;
+        const statsHeaders = ["Parameter", "Average", "Min", "Max", "Count"];
+        const statsColX = [40, 230, 320, 400, 480];
+        const statsColW = [190, 90, 80, 80, 72];
+        const statsTableW = 532;
+        const statsRowH = 22;
 
-        // Compact table header with modern design
-        doc.roundedRect(40, yPosition, 532, 22, 3).fill(colors.primary);
-
-        const statsHeaders = ["Parameter", "Rata-rata", "Min", "Max", "Jumlah"];
-        const statsColX = [48, 240, 330, 410, 490];
-        const statsColW = [185, 80, 70, 70, 60];
-
-        doc.fontSize(9).font("Helvetica-Bold").fillColor(colors.white);
-        statsHeaders.forEach((header, i) => {
-          doc.text(header, statsColX[i], yPosition + 7, {
-            width: statsColW[i],
-            align: i === 0 ? "left" : "center",
+        // Draw stats table header
+        const drawStatsHeader = (y) => {
+          doc.rect(40, y, statsTableW, statsRowH).fill(colors.primary);
+          doc.fontSize(9).font("Helvetica-Bold").fillColor(colors.white);
+          statsHeaders.forEach((header, i) => {
+            doc.text(header, statsColX[i] + 6, y + 7, {
+              width: statsColW[i] - 12,
+              align: i === 0 ? "left" : "center",
+            });
           });
-        });
+          return y + statsRowH;
+        };
 
-        yPosition += 22;
+        yPosition = drawStatsHeader(yPosition);
 
-        // Statistics rows with better styling
         let rowAlt = true;
         Object.entries(summary.parameters).forEach(([key, stats]) => {
           if (typeof stats === "object" && stats !== null) {
-            // Check page break
             if (yPosition > 720) {
               doc.addPage();
               yPosition = 40;
-
-              // Repeat header on new page
-              doc.roundedRect(40, yPosition, 532, 22, 3).fill(colors.primary);
-
-              doc.fontSize(9).font("Helvetica-Bold").fillColor(colors.white);
-              statsHeaders.forEach((header, i) => {
-                doc.text(header, statsColX[i], yPosition + 7, {
-                  width: statsColW[i],
-                  align: i === 0 ? "left" : "center",
-                });
-              });
-              yPosition += 22;
+              yPosition = drawStatsHeader(yPosition);
               rowAlt = true;
             }
 
-            // Alternating row colors
-            if (rowAlt) {
-              doc.rect(40, yPosition, 532, 20).fill("#f9fafb");
-            }
+            // Row background
+            doc
+              .rect(40, yPosition, statsTableW, statsRowH)
+              .fill(rowAlt ? "#f0f4fa" : colors.white);
+            // Row border
+            doc
+              .rect(40, yPosition, statsTableW, statsRowH)
+              .lineWidth(0.3)
+              .strokeColor("#d1d5db")
+              .stroke();
             rowAlt = !rowAlt;
 
+            // Vertical grid lines
+            statsColX.forEach((cx, i) => {
+              if (i > 0) {
+                doc
+                  .moveTo(cx, yPosition)
+                  .lineTo(cx, yPosition + statsRowH)
+                  .lineWidth(0.3)
+                  .strokeColor("#d1d5db")
+                  .stroke();
+              }
+            });
+
             doc.fontSize(9).font("Helvetica-Bold").fillColor(colors.dark);
-
-            // Parameter name
             const paramName = key.toUpperCase().replace(/_/g, " ");
-            doc.text(paramName, statsColX[0], yPosition + 6, {
-              width: statsColW[0],
+            doc.text(paramName, statsColX[0] + 6, yPosition + 7, {
+              width: statsColW[0] - 12,
             });
 
-            doc.font("Helvetica").fontSize(9);
-            doc.text(stats.avg, statsColX[1], yPosition + 6, {
-              width: statsColW[1],
+            doc.font("Helvetica").fontSize(9).fillColor("#374151");
+            doc.text(stats.avg, statsColX[1] + 6, yPosition + 7, {
+              width: statsColW[1] - 12,
               align: "center",
             });
-            doc.text(stats.min, statsColX[2], yPosition + 6, {
-              width: statsColW[2],
+            doc.text(stats.min, statsColX[2] + 6, yPosition + 7, {
+              width: statsColW[2] - 12,
               align: "center",
             });
-            doc.text(stats.max, statsColX[3], yPosition + 6, {
-              width: statsColW[3],
+            doc.text(stats.max, statsColX[3] + 6, yPosition + 7, {
+              width: statsColW[3] - 12,
               align: "center",
             });
-            doc.text(stats.count.toString(), statsColX[4], yPosition + 6, {
-              width: statsColW[4],
+            doc.text(stats.count.toString(), statsColX[4] + 6, yPosition + 7, {
+              width: statsColW[4] - 12,
               align: "center",
             });
 
-            yPosition += 20;
+            yPosition += statsRowH;
           }
         });
 
-        // Add bottom border to table
+        // Outer border for stats table
         doc
-          .strokeColor(colors.gray)
-          .lineWidth(0.5)
-          .moveTo(40, yPosition)
-          .lineTo(572, yPosition)
+          .rect(
+            40,
+            yPosition -
+              statsRowH *
+                Object.entries(summary.parameters).filter(
+                  ([, s]) => typeof s === "object",
+                ).length -
+              statsRowH,
+            statsTableW,
+            statsRowH *
+              (Object.entries(summary.parameters).filter(
+                ([, s]) => typeof s === "object",
+              ).length +
+                1),
+          )
+          .lineWidth(0.8)
+          .strokeColor(colors.primary)
           .stroke();
 
         // ========================================
@@ -575,220 +632,275 @@ const reportService = {
         );
 
         if (removalStats.length > 0) {
-          yPosition += 18;
+          yPosition += 20;
+          yPosition = drawSectionTitle(
+            "REMOVAL EFFICIENCY",
+            yPosition,
+            colors.success,
+          );
 
-          doc
-            .fontSize(13)
-            .fillColor(colors.dark)
-            .font("Helvetica-Bold")
-            .text("EFISIENSI REMOVAL", 40, yPosition);
-
-          doc
-            .strokeColor(colors.success)
-            .lineWidth(2.5)
-            .moveTo(40, yPosition + 20)
-            .lineTo(180, yPosition + 20)
-            .stroke();
-
-          yPosition += 28;
-
-          // Card layout for removal efficiency
-          const removalBoxWidth = Math.floor(532 / removalStats.length);
-          const removalBoxHeight = 65;
+          const removalBoxWidth = Math.min(
+            180,
+            Math.floor(532 / removalStats.length) - 8,
+          );
+          const removalBoxHeight = 70;
+          const removalTotalW = removalStats.length * (removalBoxWidth + 8) - 8;
+          const removalStartX = 40 + (532 - removalTotalW) / 2;
 
           removalStats.forEach(([key, value], index) => {
-            const xPos = 40 + index * removalBoxWidth;
+            const xPos = removalStartX + index * (removalBoxWidth + 8);
 
-            // Rounded corners box
             doc
               .roundedRect(
-                xPos + 2,
+                xPos,
                 yPosition,
-                removalBoxWidth - 6,
+                removalBoxWidth,
                 removalBoxHeight,
-                5,
+                8,
               )
-              .fill("#d1fae5");
-
-            // Add border
+              .fill("#ecfdf5");
             doc
               .roundedRect(
-                xPos + 2,
+                xPos,
                 yPosition,
-                removalBoxWidth - 6,
+                removalBoxWidth,
                 removalBoxHeight,
-                5,
+                8,
               )
-              .stroke("#10b981");
+              .lineWidth(1.2)
+              .strokeColor("#34d399")
+              .stroke();
 
-            // Parameter name
+            // Icon bar at top
+            doc.rect(xPos, yPosition, removalBoxWidth, 4).fill("#34d399");
+
             doc
-              .fontSize(8)
+              .fontSize(9)
               .fillColor(colors.dark)
               .font("Helvetica-Bold")
               .text(
                 key.toUpperCase().replace(/_REMOVAL/g, ""),
                 xPos + 8,
-                yPosition + 18,
+                yPosition + 14,
                 { width: removalBoxWidth - 16, align: "center" },
               );
 
-            // Removal percentage
             doc
-              .fontSize(18)
-              .fillColor(colors.success)
+              .fontSize(20)
+              .fillColor("#059669")
               .font("Helvetica-Bold")
-              .text(value, xPos + 8, yPosition + 36, {
+              .text(value, xPos + 8, yPosition + 34, {
                 width: removalBoxWidth - 16,
                 align: "center",
               });
           });
 
-          yPosition += removalBoxHeight + 10;
+          yPosition += removalBoxHeight + 12;
         }
 
         // ========================================
-        // DATA TABLE - RECENT READINGS
+        // DATA TABLE - RECENT READINGS (PROFESSIONAL)
         // ========================================
-        // Check if we need new page
-        if (yPosition > 600) {
+        if (yPosition > 560) {
           doc.addPage();
           yPosition = 40;
         } else {
-          yPosition += 12;
+          yPosition += 14;
         }
 
-        doc
-          .fontSize(13)
-          .fillColor(colors.dark)
-          .font("Helvetica-Bold")
-          .text("DATA PEMBACAAN TERKINI", 40, yPosition);
+        yPosition = drawSectionTitle(
+          "RECENT READINGS DATA",
+          yPosition,
+          colors.secondary,
+        );
 
-        doc
-          .strokeColor(colors.secondary)
-          .lineWidth(2.5)
-          .moveTo(40, yPosition + 20)
-          .lineTo(210, yPosition + 20)
-          .stroke();
-
-        yPosition += 28;
-
-        // Table with better spacing
-        const tableTop = yPosition;
-        const colWidths = [120, 65, 70, 65, 70, 75];
-        const colX = [40, 160, 225, 295, 360, 435];
-        const headers = [
-          "Waktu",
-          "pH In",
-          "TDS In",
-          "pH Out",
-          "TDS Out",
-          "Temp Out",
+        // Table config
+        const tblX = 40;
+        const tblW = 532;
+        const tblRowH = 20;
+        const tblHeaderH = 24;
+        const colDefs = [
+          { label: "No.", width: 32, align: "center" },
+          { label: "Timestamp", width: 110, align: "left" },
+          { label: "pH In", width: 68, align: "center" },
+          { label: "TDS In", width: 72, align: "center" },
+          { label: "pH Out", width: 68, align: "center" },
+          { label: "TDS Out", width: 78, align: "center" },
+          { label: "Temp Out", width: 104, align: "center" },
         ];
 
-        // Header with modern design
-        doc.roundedRect(40, tableTop, 532, 20, 3).fill(colors.primary);
-
-        doc.fontSize(8).font("Helvetica-Bold").fillColor(colors.white);
-        headers.forEach((header, i) => {
-          doc.text(header, colX[i], tableTop + 6, {
-            width: colWidths[i],
-            align: i === 0 ? "left" : "center",
-          });
+        // Calculate column X positions
+        let runningX = tblX;
+        colDefs.forEach((col) => {
+          col.x = runningX;
+          runningX += col.width;
         });
 
-        yPosition = tableTop + 20;
+        // Draw data table header
+        const drawDataHeader = (y) => {
+          // Header background
+          doc.rect(tblX, y, tblW, tblHeaderH).fill(colors.primary);
 
-        // Table rows - LIMIT TO 15 rows
+          // Header text
+          doc.fontSize(8.5).font("Helvetica-Bold").fillColor(colors.white);
+          colDefs.forEach((col) => {
+            doc.text(col.label, col.x + 4, y + 8, {
+              width: col.width - 8,
+              align: col.align,
+            });
+          });
+
+          // Header vertical dividers (subtle white lines)
+          colDefs.forEach((col, i) => {
+            if (i > 0) {
+              doc
+                .moveTo(col.x, y + 4)
+                .lineTo(col.x, y + tblHeaderH - 4)
+                .lineWidth(0.5)
+                .strokeColor("rgba(255,255,255,0.3)")
+                .stroke();
+            }
+          });
+
+          return y + tblHeaderH;
+        };
+
+        yPosition = drawDataHeader(yPosition);
+        let dataTableTopY = yPosition - tblHeaderH;
+
         const recentData = data.slice(0, 15);
-        let rowColor = true;
+        let rowColorAlt = true;
 
-        doc.font("Helvetica").fontSize(7);
+        recentData.forEach((row, idx) => {
+          // Page break check
+          if (yPosition > 740) {
+            // Draw outer border for current page portion
+            doc
+              .rect(tblX, dataTableTopY, tblW, yPosition - dataTableTopY)
+              .lineWidth(0.8)
+              .strokeColor(colors.primary)
+              .stroke();
 
-        recentData.forEach((row) => {
-          // Check if need new page
-          if (yPosition > 750) {
             doc.addPage();
             yPosition = 40;
-
-            // Repeat table header
-            doc.roundedRect(40, yPosition, 532, 20, 3).fill(colors.primary);
-
-            doc.fontSize(8).font("Helvetica-Bold").fillColor(colors.white);
-            headers.forEach((header, i) => {
-              doc.text(header, colX[i], yPosition + 6, {
-                width: colWidths[i],
-                align: i === 0 ? "left" : "center",
-              });
-            });
-
-            yPosition += 20;
-            rowColor = true;
+            yPosition = drawDataHeader(yPosition);
+            dataTableTopY = yPosition - tblHeaderH;
+            rowColorAlt = true;
           }
 
-          // Alternating row colors
-          if (rowColor) {
-            doc.rect(40, yPosition, 532, 16).fill("#f9fafb");
-          }
-          rowColor = !rowColor;
+          // Row background
+          const rowBg = rowColorAlt ? "#f0f4fa" : colors.white;
+          doc.rect(tblX, yPosition, tblW, tblRowH).fill(rowBg);
+          rowColorAlt = !rowColorAlt;
 
-          doc.fillColor(colors.dark);
+          // Horizontal row line
+          doc
+            .moveTo(tblX, yPosition + tblRowH)
+            .lineTo(tblX + tblW, yPosition + tblRowH)
+            .lineWidth(0.3)
+            .strokeColor("#d1d5db")
+            .stroke();
 
+          // Vertical grid lines
+          colDefs.forEach((col, i) => {
+            if (i > 0) {
+              doc
+                .moveTo(col.x, yPosition)
+                .lineTo(col.x, yPosition + tblRowH)
+                .lineWidth(0.3)
+                .strokeColor("#d1d5db")
+                .stroke();
+            }
+          });
+
+          const textY = yPosition + 6;
+          doc.font("Helvetica").fontSize(8).fillColor(colors.dark);
+
+          // No.
+          doc.text((idx + 1).toString(), colDefs[0].x + 4, textY, {
+            width: colDefs[0].width - 8,
+            align: "center",
+          });
+
+          // Timestamp
           const timestamp = row.timestamp
-            ? new Date(row.timestamp).toLocaleString("id-ID", {
+            ? new Date(row.timestamp).toLocaleString("en-GB", {
                 day: "2-digit",
                 month: "short",
+                year: "numeric",
                 hour: "2-digit",
                 minute: "2-digit",
+                timeZone: "Asia/Jakarta",
               })
             : "N/A";
-
-          doc.text(timestamp, colX[0] + 2, yPosition + 4, {
-            width: colWidths[0] - 4,
+          doc.text(timestamp, colDefs[1].x + 6, textY, {
+            width: colDefs[1].width - 10,
           });
+
+          // pH In
           doc.text(
             row.inlet_ph != null ? row.inlet_ph.toFixed(2) : "-",
-            colX[1],
-            yPosition + 4,
-            { width: colWidths[1], align: "center" },
+            colDefs[2].x + 4,
+            textY,
+            { width: colDefs[2].width - 8, align: "center" },
           );
+
+          // TDS In
           doc.text(
             row.inlet_tds != null ? row.inlet_tds.toFixed(0) : "-",
-            colX[2],
-            yPosition + 4,
-            { width: colWidths[2], align: "center" },
+            colDefs[3].x + 4,
+            textY,
+            { width: colDefs[3].width - 8, align: "center" },
           );
+
+          // pH Out
           doc.text(
             row.outlet_ph != null ? row.outlet_ph.toFixed(2) : "-",
-            colX[3],
-            yPosition + 4,
-            { width: colWidths[3], align: "center" },
+            colDefs[4].x + 4,
+            textY,
+            { width: colDefs[4].width - 8, align: "center" },
           );
+
+          // TDS Out
           doc.text(
             row.outlet_tds != null ? row.outlet_tds.toFixed(0) : "-",
-            colX[4],
-            yPosition + 4,
-            { width: colWidths[4], align: "center" },
+            colDefs[5].x + 4,
+            textY,
+            { width: colDefs[5].width - 8, align: "center" },
           );
+
+          // Temp Out
           doc.text(
             row.outlet_temperature != null
-              ? row.outlet_temperature.toFixed(1) + "°C"
+              ? row.outlet_temperature.toFixed(1) + " °C"
               : "-",
-            colX[5],
-            yPosition + 4,
-            { width: colWidths[5], align: "center" },
+            colDefs[6].x + 4,
+            textY,
+            { width: colDefs[6].width - 8, align: "center" },
           );
 
-          yPosition += 16;
+          yPosition += tblRowH;
         });
 
-        // Add bottom border
+        // Outer border for data table (current/last page)
         doc
-          .strokeColor(colors.gray)
-          .lineWidth(0.5)
-          .moveTo(40, yPosition)
-          .lineTo(572, yPosition)
+          .rect(tblX, dataTableTopY, tblW, yPosition - dataTableTopY)
+          .lineWidth(1)
+          .strokeColor(colors.primary)
           .stroke();
+
+        // Row count note
+        yPosition += 6;
+        doc
+          .fontSize(7.5)
+          .fillColor(colors.gray)
+          .font("Helvetica")
+          .text(
+            `Showing ${recentData.length} of ${data.length} most recent readings`,
+            tblX,
+            yPosition,
+            { width: tblW, align: "right" },
+          );
 
         // ========================================
         // ADD PAGE NUMBERS AND FOOTER
@@ -801,20 +913,19 @@ const reportService = {
         for (let i = 0; i < totalPages; i++) {
           doc.switchToPage(i);
 
-          // Reset cursor to safe position to avoid triggering auto page-add
-          doc.x = doc.page.margins.left;
-          doc.y = doc.page.margins.top;
+          // Temporarily remove bottom margin so footer text does not trigger a new page
+          const savedBottom = doc.page.margins.bottom;
+          doc.page.margins.bottom = 0;
 
           // Footer line
           doc
             .strokeColor(colors.primary)
             .lineWidth(1)
-            .moveTo(40, pageH - 50)
-            .lineTo(572, pageH - 50)
+            .moveTo(40, pageH - 45)
+            .lineTo(572, pageH - 45)
             .stroke();
 
-          // Combined footer: "Halaman x/x | Water Quality Monitoring ... | Universitas Diponegoro"
-          const footerLine1 = `Halaman ${i + 1} dari ${totalPages}`;
+          const footerLine1 = `Page ${i + 1} of ${totalPages}`;
           const footerLine2 =
             "Water Quality Monitoring System - IPAL Teknik Lingkungan | Universitas Diponegoro";
 
@@ -822,7 +933,7 @@ const reportService = {
             .fontSize(8)
             .fillColor(colors.gray)
             .font("Helvetica")
-            .text(footerLine1, 0, pageH - 40, {
+            .text(footerLine1, 0, pageH - 38, {
               align: "center",
               width: pageW,
               lineBreak: false,
@@ -832,21 +943,19 @@ const reportService = {
             .fontSize(7)
             .fillColor(colors.gray)
             .font("Helvetica")
-            .text(footerLine2, 0, pageH - 28, {
+            .text(footerLine2, 0, pageH - 26, {
               align: "center",
               width: pageW,
               lineBreak: false,
             });
 
-          // CRITICAL: Reset cursor back to top to prevent PDFKit from creating new pages
+          // Restore margin and reset cursor to prevent extra page creation
+          doc.page.margins.bottom = savedBottom;
           doc.x = doc.page.margins.left;
           doc.y = doc.page.margins.top;
         }
 
         console.log("PDF content written, finalizing...");
-
-        // Flush all buffered pages before ending
-        doc.flushPages();
 
         // Finalize PDF
         doc.end();
