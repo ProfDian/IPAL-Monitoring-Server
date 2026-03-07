@@ -20,9 +20,9 @@ const OUTLET_MEMBERSHIP = {
     tinggi: { center: 10.0, sigma: 1.0 }, // Peak at pH 10
   },
   tds: {
-    rendah: { center: 1500, sigma: 500 }, // Peak at 1500 mg/L
-    normal: { center: 3000, sigma: 800 }, // Peak at 3000 mg/L
-    tinggi: { center: 5000, sigma: 700 }, // Peak at 5000 mg/L
+    rendah: { center: 500, sigma: 400 }, // Peak at 500 mg/L (good quality)
+    normal: { center: 2000, sigma: 800 }, // Peak at 2000 mg/L
+    tinggi: { center: 4000, sigma: 800 }, // Peak at 4000 mg/L (baku mutu limit)
   },
   suhu: {
     rendah: { center: 22, sigma: 3 }, // Peak at 22°C

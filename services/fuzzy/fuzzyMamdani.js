@@ -10,8 +10,6 @@
  */
 
 const {
-  OUTLET_MEMBERSHIP,
-  EFFECTIVENESS_MEMBERSHIP,
   OUTLET_RULES,
   EFFECTIVENESS_RULES,
   OUTPUT_MEMBERSHIP,
@@ -71,11 +69,11 @@ function fuzzifyOutlet(outlet) {
     tinggi: gaussianMembership(outlet.ph, 10.0, 1.0),
   };
 
-  // TDS (Gaussian)
+  // TDS (Gaussian) - Calibrated for realistic IPAL range (baku mutu: ≤4000 mg/L)
   fuzzified.tds = {
-    rendah: gaussianMembership(outlet.tds, 1500, 500),
-    normal: gaussianMembership(outlet.tds, 3000, 800),
-    tinggi: gaussianMembership(outlet.tds, 5000, 700),
+    rendah: gaussianMembership(outlet.tds, 500, 400),
+    normal: gaussianMembership(outlet.tds, 2000, 800),
+    tinggi: gaussianMembership(outlet.tds, 4000, 800),
   };
 
   // Suhu (Gaussian)
@@ -164,7 +162,9 @@ function inferOutletQuality(fuzzified) {
 
     // Evaluate conditions (AND = MIN)
     rule.conditions.forEach((condition) => {
-      const [param, level] = condition.split("_");
+      const idx = condition.indexOf("_");
+      const param = condition.substring(0, idx);
+      const level = condition.substring(idx + 1);
       const membership = fuzzified[param][level];
       strength = Math.min(strength, membership);
     });
@@ -194,7 +194,9 @@ function inferEffectiveness(fuzzified) {
 
     // Evaluate conditions (AND = MIN)
     rule.conditions.forEach((condition) => {
-      const [param, level] = condition.split("_");
+      const idx = condition.indexOf("_");
+      const param = condition.substring(0, idx);
+      const level = condition.substring(idx + 1);
       const membership = fuzzified[param]?.[level] || 0;
       strength = Math.min(strength, membership);
     });
@@ -232,19 +234,22 @@ function defuzzify(fuzzyOutput, outputMembership) {
           outputShape.a,
           outputShape.b,
           outputShape.c,
-          outputShape.d
+          outputShape.d,
         );
       } else if (outputShape.type === "triangle") {
         pointMembership = triangularMembership(
           x,
           outputShape.a,
           outputShape.b,
-          outputShape.c
+          outputShape.c,
         );
       }
 
       // Apply fuzzy strength (MIN)
-      membership = Math.max(membership, Math.min(categoryMembership, pointMembership));
+      membership = Math.max(
+        membership,
+        Math.min(categoryMembership, pointMembership),
+      );
     });
 
     numerator += membership * x;
@@ -307,14 +312,21 @@ async function analyze(inlet, outlet) {
     const effectivenessFuzzy = inferEffectiveness(effectivenessFuzzified);
 
     // ===== STEP 3: DEFUZZIFICATION =====
-    const outletScore = defuzzify(outletQualityFuzzy, OUTPUT_MEMBERSHIP.quality);
+    const outletScore = defuzzify(
+      outletQualityFuzzy,
+      OUTPUT_MEMBERSHIP.quality,
+    );
     const effectivenessScore = defuzzify(
       effectivenessFuzzy,
-      OUTPUT_MEMBERSHIP.effectiveness
+      OUTPUT_MEMBERSHIP.effectiveness,
     );
 
     // ===== STEP 4: DYNAMIC WEIGHTING =====
-    const weights = calculateDynamicWeights(outlet, outletScore, effectivenessScore);
+    const weights = calculateDynamicWeights(
+      outlet,
+      outletScore,
+      effectivenessScore,
+    );
 
     const finalScore =
       outletScore * weights.outletWeight +
@@ -322,7 +334,8 @@ async function analyze(inlet, outlet) {
 
     // ===== STEP 5: STATUS DETERMINATION =====
     const outletStatus = determineStatus(outletScore);
-    const effectivenessStatus = determineEffectivenessStatus(effectivenessScore);
+    const effectivenessStatus =
+      determineEffectivenessStatus(effectivenessScore);
     const overallStatus = determineStatus(Math.round(finalScore));
 
     // ===== STEP 6: COMPLIANCE CHECK =====
@@ -335,14 +348,14 @@ async function analyze(inlet, outlet) {
       outletScore,
       effectivenessScore,
       effectiveness,
-      compliance
+      compliance,
     );
 
     // ===== STEP 8: RECOMMENDATIONS =====
     const recommendations = generateRecommendations(
       alerts,
       effectiveness,
-      compliance
+      compliance,
     );
 
     const result = {
@@ -394,7 +407,7 @@ async function analyze(inlet, outlet) {
     console.log(`   Overall Status: ${result.overall_status}`);
     console.log(`   Outlet Score: ${outletScore}/100 (${outletStatus})`);
     console.log(
-      `   Effectiveness: ${effectivenessScore}/100 (${effectivenessStatus})`
+      `   Effectiveness: ${effectivenessScore}/100 (${effectivenessStatus})`,
     );
     console.log(`   Alerts: ${alerts.length}`);
 
@@ -478,7 +491,7 @@ function generateAlerts(
   outletScore,
   effectivenessScore,
   effectiveness,
-  compliance
+  compliance,
 ) {
   const alerts = [];
 
@@ -502,15 +515,19 @@ function generateAlerts(
 
   // 2. ANOMALY ALERTS (Unusual patterns)
   // pH outlet worse than inlet (should not happen)
-  if (inlet.ph >= 6.0 && inlet.ph <= 9.0 && (outlet.ph < 6.0 || outlet.ph > 9.0)) {
+  if (
+    inlet.ph >= 6.0 &&
+    inlet.ph <= 9.0 &&
+    (outlet.ph < 6.0 || outlet.ph > 9.0)
+  ) {
     alerts.push({
       level: "ANOMALY",
       type: "unusual_pattern",
       parameter: "ph",
       message: `Inlet pH normal (${inlet.ph.toFixed(
-        1
+        1,
       )}) tapi outlet di luar baku mutu (${outlet.ph.toFixed(
-        1
+        1,
       )}) - Kemungkinan kontaminasi sekunder atau sistem buffer gagal`,
       severity: "high",
       priority: 2,
@@ -557,7 +574,7 @@ function generateAlerts(
       type: "low_reduction",
       parameter: "tds",
       message: `TDS reduction sangat rendah (${effectiveness.tds_reduction.toFixed(
-        1
+        1,
       )}%) - Filter mungkin tersumbat`,
       severity: "medium",
       priority: 3,
@@ -577,7 +594,7 @@ function generateAlerts(
       type: "borderline_parameter",
       parameter: "ph",
       message: `pH outlet mendekati batas (${outlet.ph.toFixed(
-        1
+        1,
       )}) - Monitor ketat dan pertimbangkan adjustment`,
       severity: "low",
       priority: 4,
@@ -593,7 +610,7 @@ function generateAlerts(
       type: "borderline_parameter",
       parameter: "tds",
       message: `TDS outlet mendekati batas maksimum (${outlet.tds.toFixed(
-        0
+        0,
       )} mg/L) - Filter maintenance mungkin diperlukan`,
       severity: "low",
       priority: 4,
@@ -609,7 +626,7 @@ function generateAlerts(
       type: "borderline_parameter",
       parameter: "temperature",
       message: `Suhu outlet mendekati batas (${outlet.temperature.toFixed(
-        1
+        1,
       )}°C) - Monitor sistem pendingin`,
       severity: "low",
       priority: 4,
@@ -688,7 +705,10 @@ function generateRecommendations(alerts, effectiveness, compliance) {
   }
 
   // pH recommendations
-  if (effectiveness.ph_change < 0.5 && (compliance.violations.find(v => v.parameter === 'ph'))) {
+  if (
+    effectiveness.ph_change < 0.5 &&
+    compliance.violations.find((v) => v.parameter === "ph")
+  ) {
     recommendations.push({
       priority: "medium",
       category: "treatment",
@@ -703,7 +723,7 @@ function generateRecommendations(alerts, effectiveness, compliance) {
   }
 
   // Temperature recommendations
-  if (compliance.violations.find(v => v.parameter === 'temperature')) {
+  if (compliance.violations.find((v) => v.parameter === "temperature")) {
     recommendations.push({
       priority: "high",
       category: "treatment",
@@ -733,10 +753,7 @@ function generateRecommendations(alerts, effectiveness, compliance) {
   }
 
   // Optimization recommendations
-  if (
-    effectiveness.tds_reduction >= 30 &&
-    compliance.is_compliant
-  ) {
+  if (effectiveness.tds_reduction >= 30 && compliance.is_compliant) {
     recommendations.push({
       priority: "low",
       category: "optimization",
@@ -775,7 +792,7 @@ function getWeightReason(weights) {
  */
 module.exports = {
   analyze,
-  
+
   // Exported for testing
   fuzzifyOutlet,
   fuzzifyEffectiveness,
@@ -785,7 +802,7 @@ module.exports = {
   calculateReductionRates,
   checkCompliance,
   generateAlerts,
-  
+
   // Helper functions
   gaussianMembership,
   trapezoidalMembership,
