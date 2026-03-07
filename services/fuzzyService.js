@@ -495,7 +495,7 @@ function buildSensorHealthFromPreprocessed(preprocessed) {
  * @param {Object} outlet - Outlet sensor data { ph, tds, temperature }
  * @returns {Object} Analysis result with score, status, violations
  */
-async function analyze(inlet, outlet) {
+async function analyze(inlet, outlet, ipalId) {
   try {
     console.log("🧠 Analyzing water quality (Fuzzy Mamdani)...");
     console.log("   Inlet:", inlet);
@@ -505,14 +505,17 @@ async function analyze(inlet, outlet) {
     const inletOriginal = { ...inlet };
     const outletOriginal = { ...outlet };
 
-    // ===== STEP 1: Advanced Sensor Preprocessing =====
-    // Uses 4 imputation strategies: safe_default, historical_average,
-    // cross_parameter, inlet_outlet_relationship
+    // ===== STEP 1: Sensor Preprocessing =====
+    // Uses last known value → safe default fallback
     let preprocessed;
     let sensorHealth;
 
     try {
-      preprocessed = preprocessSensorData({ ...inlet }, { ...outlet });
+      preprocessed = await preprocessSensorData(
+        { ...inlet },
+        { ...outlet },
+        ipalId,
+      );
       sensorHealth = buildSensorHealthFromPreprocessed(preprocessed);
       inlet = preprocessed.inlet;
       outlet = preprocessed.outlet;

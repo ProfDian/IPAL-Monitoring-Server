@@ -115,7 +115,6 @@ async function submitReading(data) {
       const dataValidation = validationSvc.validateReadingData(readingData);
       if (!dataValidation.valid) {
         console.warn("⚠️ Data validation warnings:", dataValidation.warnings);
-        // Continue anyway, just log warnings
       }
     }
 
@@ -138,7 +137,6 @@ async function submitReading(data) {
     if (mergeResult) {
       // Merge successful!
       console.log("🎉 Merge successful! Processing complete reading...");
-
       return {
         success: true,
         merged: true,
@@ -272,7 +270,7 @@ async function processCompleteReading(mergedData) {
     // STEP 1: RUN FUZZY LOGIC ANALYSIS
     // ========================================
     console.log("🧠 Running fuzzy logic analysis...");
-    const fuzzyResult = await getFuzzyService().analyze(inlet, outlet);
+    const fuzzyResult = await getFuzzyService().analyze(inlet, outlet, ipal_id);
 
     console.log("✅ Fuzzy analysis complete:");
     console.log(`   Score: ${fuzzyResult.quality_score}/100`);
