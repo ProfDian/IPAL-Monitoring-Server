@@ -1067,27 +1067,41 @@ const reportService = {
           const minScore = Math.round(Math.min(...qualityScores));
           const maxScore = Math.round(Math.max(...qualityScores));
 
-          // Determine status color and label
+          // Determine status color and label (5 levels matching fuzzy system)
           const getScoreConfig = (score) => {
+            if (score >= 85)
+              return {
+                color: "#047857",
+                bg: "#ecfdf5",
+                border: "#34d399",
+                label: "Excellent",
+              };
             if (score >= 70)
               return {
                 color: colors.success,
-                bg: "#ecfdf5",
-                border: "#34d399",
+                bg: "#f0fdf4",
+                border: "#6ee7b7",
                 label: "Good",
               };
-            if (score >= 40)
+            if (score >= 50)
               return {
                 color: colors.warning,
                 bg: "#fffbeb",
                 border: "#fbbf24",
-                label: "Moderate",
+                label: "Fair",
+              };
+            if (score >= 30)
+              return {
+                color: "#ea580c",
+                bg: "#fff7ed",
+                border: "#fb923c",
+                label: "Poor",
               };
             return {
               color: colors.danger,
               bg: "#fef2f2",
               border: "#f87171",
-              label: "Poor",
+              label: "Critical",
             };
           };
           const scoreConfig = getScoreConfig(avgScore);
@@ -1223,7 +1237,7 @@ const reportService = {
         }
 
         yPosition = drawSectionTitle(
-          "RECENT READINGS DATA",
+          "WATER QUALITY TREATMENT REPORT",
           yPosition,
           colors.secondary,
         );
@@ -1284,7 +1298,7 @@ const reportService = {
         yPosition = drawDataHeader(yPosition);
         let dataTableTopY = yPosition - tblHeaderH;
 
-        const recentData = data.slice(0, 15);
+        const recentData = data;
         let rowColorAlt = true;
 
         recentData.forEach((row, idx) => {
@@ -1411,13 +1425,17 @@ const reportService = {
               ? Math.round(row.quality_score).toString()
               : "-";
           const scoreColor =
-            row.quality_score >= 70
-              ? colors.success
-              : row.quality_score >= 40
-                ? colors.warning
-                : row.quality_score != null
-                  ? colors.danger
-                  : colors.gray;
+            row.quality_score == null
+              ? colors.gray
+              : row.quality_score >= 85
+                ? "#047857"
+                : row.quality_score >= 70
+                  ? colors.success
+                  : row.quality_score >= 50
+                    ? colors.warning
+                    : row.quality_score >= 30
+                      ? "#ea580c"
+                      : colors.danger;
           doc.font("Helvetica-Bold").fillColor(scoreColor);
           doc.text(scoreText, colDefs[8].x + 4, textY, {
             width: colDefs[8].width - 8,
@@ -1441,12 +1459,10 @@ const reportService = {
           .fontSize(7.5)
           .fillColor(colors.gray)
           .font("Helvetica")
-          .text(
-            `Showing ${recentData.length} of ${data.length} most recent readings`,
-            tblX,
-            yPosition,
-            { width: tblW, align: "right" },
-          );
+          .text(`Total: ${recentData.length} readings`, tblX, yPosition, {
+            width: tblW,
+            align: "right",
+          });
 
         // ========================================
         // ADD PAGE NUMBERS AND FOOTER
