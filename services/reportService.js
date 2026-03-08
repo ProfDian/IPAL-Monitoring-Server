@@ -75,6 +75,10 @@ const reportService = {
           });
         }
 
+        // Include fuzzy analysis data
+        row.quality_score = reading.fuzzy_analysis?.quality_score ?? null;
+        row.quality_status = reading.fuzzy_analysis?.status ?? null;
+
         data.push(row);
       });
 
@@ -1036,9 +1040,182 @@ const reportService = {
         }
 
         // ========================================
+        // WATER QUALITY SCORE OVERVIEW
+        // ========================================
+        if (yPosition > 600) {
+          doc.addPage();
+          yPosition = 40;
+        } else {
+          yPosition += 14;
+        }
+
+        yPosition = drawSectionTitle(
+          "WATER QUALITY SCORE",
+          yPosition,
+          colors.secondary,
+        );
+
+        // Calculate quality score stats from data
+        const qualityScores = data
+          .map((d) => d.quality_score)
+          .filter((s) => s != null);
+
+        if (qualityScores.length > 0) {
+          const avgScore = Math.round(
+            qualityScores.reduce((a, b) => a + b, 0) / qualityScores.length,
+          );
+          const minScore = Math.round(Math.min(...qualityScores));
+          const maxScore = Math.round(Math.max(...qualityScores));
+
+          // Determine status color and label
+          const getScoreConfig = (score) => {
+            if (score >= 70)
+              return {
+                color: colors.success,
+                bg: "#ecfdf5",
+                border: "#34d399",
+                label: "Good",
+              };
+            if (score >= 40)
+              return {
+                color: colors.warning,
+                bg: "#fffbeb",
+                border: "#fbbf24",
+                label: "Moderate",
+              };
+            return {
+              color: colors.danger,
+              bg: "#fef2f2",
+              border: "#f87171",
+              label: "Poor",
+            };
+          };
+          const scoreConfig = getScoreConfig(avgScore);
+
+          // Score card layout: main big score + 2 small stat boxes
+          const scoreCardW = 180;
+          const scoreCardH = 90;
+          const scoreCardX = 40 + (532 - scoreCardW - 180 - 16) / 2;
+
+          // Main score card
+          doc
+            .roundedRect(scoreCardX, yPosition, scoreCardW, scoreCardH, 8)
+            .fill(scoreConfig.bg);
+          doc
+            .roundedRect(scoreCardX, yPosition, scoreCardW, scoreCardH, 8)
+            .lineWidth(1.5)
+            .strokeColor(scoreConfig.border)
+            .stroke();
+
+          doc
+            .fontSize(8)
+            .fillColor(colors.gray)
+            .font("Helvetica-Bold")
+            .text("AVERAGE SCORE", scoreCardX + 10, yPosition + 10, {
+              width: scoreCardW - 20,
+              align: "center",
+            });
+          doc
+            .fontSize(36)
+            .fillColor(scoreConfig.color)
+            .font("Helvetica-Bold")
+            .text(avgScore.toString(), scoreCardX + 10, yPosition + 26, {
+              width: scoreCardW - 20,
+              align: "center",
+            });
+          doc
+            .fontSize(10)
+            .fillColor(scoreConfig.color)
+            .font("Helvetica-Bold")
+            .text(scoreConfig.label, scoreCardX + 10, yPosition + 68, {
+              width: scoreCardW - 20,
+              align: "center",
+            });
+
+          // Min/Max side cards
+          const sideX = scoreCardX + scoreCardW + 16;
+          const sideW = 88;
+          const sideH = 42;
+
+          // Min score
+          doc.roundedRect(sideX, yPosition, sideW, sideH, 6).fill("#fef2f2");
+          doc
+            .roundedRect(sideX, yPosition, sideW, sideH, 6)
+            .lineWidth(0.8)
+            .strokeColor("#fca5a5")
+            .stroke();
+          doc
+            .fontSize(7)
+            .fillColor(colors.gray)
+            .font("Helvetica-Bold")
+            .text("MIN", sideX + 6, yPosition + 6, {
+              width: sideW - 12,
+              align: "center",
+            });
+          doc
+            .fontSize(18)
+            .fillColor(colors.danger)
+            .font("Helvetica-Bold")
+            .text(minScore.toString(), sideX + 6, yPosition + 18, {
+              width: sideW - 12,
+              align: "center",
+            });
+
+          // Max score
+          const maxX = sideX + sideW + 8;
+          doc.roundedRect(maxX, yPosition, sideW, sideH, 6).fill("#ecfdf5");
+          doc
+            .roundedRect(maxX, yPosition, sideW, sideH, 6)
+            .lineWidth(0.8)
+            .strokeColor("#6ee7b7")
+            .stroke();
+          doc
+            .fontSize(7)
+            .fillColor(colors.gray)
+            .font("Helvetica-Bold")
+            .text("MAX", maxX + 6, yPosition + 6, {
+              width: sideW - 12,
+              align: "center",
+            });
+          doc
+            .fontSize(18)
+            .fillColor(colors.success)
+            .font("Helvetica-Bold")
+            .text(maxScore.toString(), maxX + 6, yPosition + 18, {
+              width: sideW - 12,
+              align: "center",
+            });
+
+          // Count
+          doc
+            .fontSize(8)
+            .fillColor(colors.gray)
+            .font("Helvetica")
+            .text(
+              `Based on ${qualityScores.length} readings`,
+              sideX,
+              yPosition + sideH + 10,
+              { width: sideW * 2 + 8, align: "center" },
+            );
+
+          yPosition += scoreCardH + 12;
+        } else {
+          doc
+            .fontSize(9)
+            .fillColor(colors.gray)
+            .font("Helvetica")
+            .text(
+              "No quality score data available for this period.",
+              40,
+              yPosition,
+            );
+          yPosition += 20;
+        }
+
+        // ========================================
         // DATA TABLE - RECENT READINGS (PROFESSIONAL)
         // ========================================
-        if (yPosition > 560) {
+        if (yPosition > 520) {
           doc.addPage();
           yPosition = 40;
         } else {
@@ -1057,13 +1234,15 @@ const reportService = {
         const tblRowH = 20;
         const tblHeaderH = 24;
         const colDefs = [
-          { label: "No.", width: 32, align: "center" },
-          { label: "Timestamp", width: 110, align: "left" },
-          { label: "pH In", width: 68, align: "center" },
-          { label: "TDS In", width: 72, align: "center" },
-          { label: "pH Out", width: 68, align: "center" },
-          { label: "TDS Out", width: 78, align: "center" },
-          { label: "Temp Out", width: 104, align: "center" },
+          { label: "No.", width: 28, align: "center" },
+          { label: "Timestamp", width: 100, align: "left" },
+          { label: "pH In", width: 52, align: "center" },
+          { label: "TDS In", width: 58, align: "center" },
+          { label: "Temp In", width: 58, align: "center" },
+          { label: "pH Out", width: 52, align: "center" },
+          { label: "TDS Out", width: 62, align: "center" },
+          { label: "Temp Out", width: 62, align: "center" },
+          { label: "Score", width: 60, align: "center" },
         ];
 
         // Calculate column X positions
@@ -1190,31 +1369,61 @@ const reportService = {
             { width: colDefs[3].width - 8, align: "center" },
           );
 
-          // pH Out
+          // Temp In
           doc.text(
-            row.outlet_ph != null ? row.outlet_ph.toFixed(2) : "-",
+            row.inlet_temperature != null
+              ? row.inlet_temperature.toFixed(1) + "°C"
+              : "-",
             colDefs[4].x + 4,
             textY,
             { width: colDefs[4].width - 8, align: "center" },
           );
 
-          // TDS Out
+          // pH Out
           doc.text(
-            row.outlet_tds != null ? row.outlet_tds.toFixed(0) : "-",
+            row.outlet_ph != null ? row.outlet_ph.toFixed(2) : "-",
             colDefs[5].x + 4,
             textY,
             { width: colDefs[5].width - 8, align: "center" },
           );
 
-          // Temp Out
+          // TDS Out
           doc.text(
-            row.outlet_temperature != null
-              ? row.outlet_temperature.toFixed(1) + " °C"
-              : "-",
+            row.outlet_tds != null ? row.outlet_tds.toFixed(0) : "-",
             colDefs[6].x + 4,
             textY,
             { width: colDefs[6].width - 8, align: "center" },
           );
+
+          // Temp Out
+          doc.text(
+            row.outlet_temperature != null
+              ? row.outlet_temperature.toFixed(1) + "°C"
+              : "-",
+            colDefs[7].x + 4,
+            textY,
+            { width: colDefs[7].width - 8, align: "center" },
+          );
+
+          // Quality Score
+          const scoreText =
+            row.quality_score != null
+              ? Math.round(row.quality_score).toString()
+              : "-";
+          const scoreColor =
+            row.quality_score >= 70
+              ? colors.success
+              : row.quality_score >= 40
+                ? colors.warning
+                : row.quality_score != null
+                  ? colors.danger
+                  : colors.gray;
+          doc.font("Helvetica-Bold").fillColor(scoreColor);
+          doc.text(scoreText, colDefs[8].x + 4, textY, {
+            width: colDefs[8].width - 8,
+            align: "center",
+          });
+          doc.font("Helvetica").fillColor(colors.dark);
 
           yPosition += tblRowH;
         });
