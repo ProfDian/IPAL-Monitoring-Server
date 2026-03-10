@@ -1,30 +1,37 @@
 /**
- * ========================================
- * FUZZY SERVICE - FUZZY MAMDANI ENGINE
- * ========================================
- * Facade/Adapter for fuzzylogiccapstone Mamdani engine.
- * Backward-compatible API for ta-server controllers.
- * Sesuai Standar Pemerintah untuk Limbah Industri.
+ * ================================================================
+ *                    FUZZY SERVICE
+ *             (Orchestrator / Facade Layer)
+ * ================================================================
  *
- * Features:
- * - Fuzzy Mamdani inference (Gaussian membership, 27 rules, centroid defuzzification)
- * - Dynamic weighted scoring (outlet quality + IPAL effectiveness)
- * - Advanced sensor fault handling with 4 imputation strategies
- * - 6-level alert system (CRITICAL → INFO)
- * - Violation detection with severity levels
- * - Recommendations generation with priority/category
- * - Backward-compatible output for waterQualityService
+ * File ini menjalankan 2 SISTEM yang berbeda:
+ *
+ *   SISTEM 1 — FUZZY MAMDANI (dari folder ./fuzzy/)
+ *     → Menghasilkan: quality_score + status
+ *     → Proses: Fuzzifikasi → Inferensi 27 Rules → Defuzzifikasi Centroid → Dynamic Weighting
+ *
+ *   SISTEM 2 — BAKU MUTU PEMERINTAH (di file ini)
+ *     → Menghasilkan: violations + effectiveness issues + recommendations
+ *     → Proses: Perbandingan sederhana (if value > threshold → violation)
+ *
+ * Alur di analyze():
+ *   STEP 1: Preprocessing sensor    (PART 1)
+ *   STEP 2: Fuzzy Mamdani → score   (PART 2 — SISTEM 1)
+ *   STEP 3: Threshold → violations  (PART 3 — SISTEM 2)
+ *   STEP 4: Gabungkan semua → return (PART 4)
+ *
+ * ================================================================
  */
 
-// ========================================
-// MAMDANI ENGINE & SENSOR HANDLER IMPORTS
-// ========================================
+// ╔══════════════════════════════════════╗
+// ║  PART 0: IMPORTS & CONSTANTS        ║
+// ╚══════════════════════════════════════╝
+
+// --- Imports ---
 const mamdaniEngine = require("./fuzzy/fuzzyMamdani");
 const { preprocessSensorData } = require("./fuzzy/sensorFaultHandler");
 
-// ========================================
-// KONFIGURASI BAKU MUTU PEMERINTAH
-// ========================================
+// --- Baku Mutu Pemerintah (threshold values) ---
 const STANDARDS = {
   ph: { min: 6.0, max: 9.0, optimal: [6.5, 8.5] },
   tds: { max: 4000, optimal: 1000 },
@@ -36,13 +43,13 @@ const BAKU_MUTU = {
   golongan_2: STANDARDS, // Backward compatibility
 };
 
-// Target efektivitas IPAL
+// --- Target efektivitas IPAL ---
 const EFFECTIVENESS_TARGET = {
   tds_reduction: 15, // Minimal 15% penurunan TDS
   ph_increase: [0.3, 1.5],
 };
 
-// Backward-compatible alias (some code references THRESHOLDS)
+// --- Backward-compatible alias (some code references THRESHOLDS) ---
 const THRESHOLDS = {
   ph: {
     min: STANDARDS.ph.min,
@@ -64,9 +71,7 @@ const THRESHOLDS = {
   },
 };
 
-// ========================================
-// HELPER FUNCTIONS
-// ========================================
+// --- Shared helper: score → status ---
 function getStatus(score) {
   if (score >= 85) return "excellent";
   if (score >= 70) return "good";
@@ -75,12 +80,17 @@ function getStatus(score) {
   return "critical";
 }
 
-// Alias for backward compatibility
-const determineStatus = getStatus;
+const determineStatus = getStatus; // Backward-compatible alias
 
-// ========================================
-// SENSOR HEALTH CHECK
-// ========================================
+// ╔══════════════════════════════════════╗
+// ║  PART 1: SENSOR PREPROCESSING       ║
+// ║  (sebelum data masuk ke sistem 1&2) ║
+// ╚══════════════════════════════════════╝
+
+/**
+ * Simple sensor health check (fallback jika advanced preprocessing gagal).
+ * Cek apakah sensor inlet/outlet kirim data null/NaN, kalau iya → ganti default.
+ */
 function checkSensorHealth(inlet, outlet) {
   const faults = [];
   const params = ["ph", "tds", "temperature"];
@@ -126,9 +136,53 @@ function checkSensorHealth(inlet, outlet) {
   };
 }
 
-// ========================================
-// SCORING
-// ========================================
+/**
+ * Adapter: konversi output preprocessSensorData (advanced)
+ * ke format sensorHealth yang dipakai generateRecommendations, alerts, dll.
+ */
+function buildSensorHealthFromPreprocessed(preprocessed) {
+  if (!preprocessed.has_faults) {
+    return {
+      count: 0,
+      confidence_score: 100,
+      faults: [],
+      all_healthy: true,
+    };
+  }
+
+  const faults = [];
+  if (preprocessed.imputation_log) {
+    preprocessed.imputation_log.forEach((log) => {
+      faults.push({
+        sensor: `${log.location}.${log.parameter}`,
+        location: log.location,
+        parameter: log.parameter,
+        original_value: log.original_value,
+        replaced_with: log.imputed_value,
+        message: `Sensor ${log.location}.${log.parameter} rusak`,
+      });
+    });
+  }
+
+  return {
+    count: preprocessed.faults?.count || faults.length,
+    confidence_score: preprocessed.confidence_score,
+    faults,
+    all_healthy: false,
+  };
+}
+
+// ╔══════════════════════════════════════╗
+// ║  PART 2: SISTEM 1 — FUZZY MAMDANI  ║
+// ║  (scoring kualitas air)             ║
+// ╚══════════════════════════════════════╝
+//
+// Engine utama ada di: ./fuzzy/fuzzyMamdani.js
+// Dipanggil di analyze() STEP 2: mamdaniEngine.analyze(inlet, outlet)
+//
+// Fungsi di bawah ini adalah FALLBACK scoring
+// (dipakai kalau Mamdani engine gagal, atau untuk backward compatibility)
+
 function scoreParameter(value, param) {
   const std = STANDARDS[param];
 
@@ -165,45 +219,10 @@ function scoreOutlet(outlet) {
   };
 }
 
-// Backward-compatible alias
 function calculateSimpleScore(data) {
   return scoreOutlet(data).score;
 }
 
-// ========================================
-// EFFECTIVENESS
-// ========================================
-function checkEffectiveness(inlet, outlet) {
-  const reductions = {
-    tds: ((inlet.tds - outlet.tds) / inlet.tds) * 100,
-    ph_change: outlet.ph - inlet.ph,
-  };
-
-  const issues = [];
-
-  if (reductions.tds < EFFECTIVENESS_TARGET.tds_reduction) {
-    issues.push({ type: "LOW_TDS_REDUCTION", severity: "high" });
-  }
-  if (reductions.ph_change < 0.3 || reductions.ph_change > 1.5) {
-    issues.push({ type: "PH_CHANGE_ISSUE", severity: "medium" });
-  }
-
-  const score = Math.round(
-    (Math.min(reductions.tds / EFFECTIVENESS_TARGET.tds_reduction, 1) * 100 +
-      (reductions.ph_change >= 0.3 && reductions.ph_change <= 1.5 ? 100 : 50)) /
-      2,
-  );
-
-  return {
-    score,
-    reductions,
-    issues,
-    effective: issues.length === 0,
-    status: issues.length === 0 ? "effective" : "ineffective",
-  };
-}
-
-// Backward-compatible aliases
 function calculateEfficiency(inlet, outlet) {
   return {
     tds_reduction:
@@ -215,47 +234,20 @@ function calculateEfficiency(inlet, outlet) {
   };
 }
 
-function checkEfficiencyViolations(inlet, outlet) {
-  const eff = checkEffectiveness(inlet, outlet);
-  return eff.issues.map((issue) => ({
-    parameter: issue.type === "LOW_TDS_REDUCTION" ? "tds" : "ph",
-    location: "efficiency",
-    value:
-      issue.type === "LOW_TDS_REDUCTION"
-        ? eff.reductions.tds.toFixed(1)
-        : eff.reductions.ph_change.toFixed(2),
-    threshold:
-      issue.type === "LOW_TDS_REDUCTION"
-        ? EFFECTIVENESS_TARGET.tds_reduction
-        : "0.3-1.5",
-    condition:
-      issue.type === "LOW_TDS_REDUCTION"
-        ? "insufficient_reduction"
-        : "ph_change_issue",
-    severity: issue.severity,
-    message:
-      issue.type === "LOW_TDS_REDUCTION"
-        ? `Efisiensi TDS rendah (${eff.reductions.tds.toFixed(1)}%). IPAL harus mengurangi TDS minimal ${EFFECTIVENESS_TARGET.tds_reduction}%`
-        : `Perubahan pH ${eff.reductions.ph_change.toFixed(2)} tidak optimal (target: 0.3-1.5)`,
-  }));
-}
+// ╔══════════════════════════════════════╗
+// ║  PART 3: SISTEM 2 — BAKU MUTU      ║
+// ║  (violations + effectiveness +      ║
+// ║   recommendations)                  ║
+// ╚══════════════════════════════════════╝
+//
+// Semua fungsi di PART 3 ini BUKAN fuzzy logic.
+// Ini adalah perbandingan sederhana: if (value > threshold) → violation.
+// Output dari PART 3 ini yang muncul sebagai "violations" dan
+// "recommendations" di Firestore (di bawah field fuzzy_analysis).
 
-function evaluateTreatmentEffectiveness(inlet, outlet) {
-  const eff = checkEffectiveness(inlet, outlet);
-  return {
-    isEffective: eff.effective,
-    improvements: { tds: eff.reductions.tds },
-  };
-}
+// --- 3A: Cek Pelanggaran Baku Mutu ---
+// Bandingkan outlet vs baku mutu pemerintah (pH 6-9, TDS ≤4000, Suhu ≤40)
 
-// ========================================
-// VIOLATIONS - BAKU MUTU PEMERINTAH
-// ========================================
-/**
- * Check for threshold violations (backward-compatible format)
- * Each violation includes location, condition, and numeric threshold
- * for compatibility with createAlertsForViolations()
- */
 function checkThresholdViolations(outlet) {
   const violations = [];
 
@@ -303,8 +295,7 @@ function checkThresholdViolations(outlet) {
   return violations;
 }
 
-// Backward-compatible alias
-const checkViolations = checkThresholdViolations;
+const checkViolations = checkThresholdViolations; // Backward-compatible alias
 
 function determineSeverity(parameter, value) {
   if (parameter === "ph") {
@@ -331,9 +322,76 @@ function determineSeverity(parameter, value) {
   return "low";
 }
 
-// ========================================
-// RECOMMENDATIONS
-// ========================================
+// --- 3B: Cek Efektivitas IPAL ---
+// Bandingkan inlet vs outlet: apakah IPAL berhasil menurunkan polutan?
+
+function checkEffectiveness(inlet, outlet) {
+  const reductions = {
+    tds: ((inlet.tds - outlet.tds) / inlet.tds) * 100,
+    ph_change: outlet.ph - inlet.ph,
+  };
+
+  const issues = [];
+
+  if (reductions.tds < EFFECTIVENESS_TARGET.tds_reduction) {
+    issues.push({ type: "LOW_TDS_REDUCTION", severity: "high" });
+  }
+  if (reductions.ph_change < 0.3 || reductions.ph_change > 1.5) {
+    issues.push({ type: "PH_CHANGE_ISSUE", severity: "medium" });
+  }
+
+  const score = Math.round(
+    (Math.min(reductions.tds / EFFECTIVENESS_TARGET.tds_reduction, 1) * 100 +
+      (reductions.ph_change >= 0.3 && reductions.ph_change <= 1.5 ? 100 : 50)) /
+      2,
+  );
+
+  return {
+    score,
+    reductions,
+    issues,
+    effective: issues.length === 0,
+    status: issues.length === 0 ? "effective" : "ineffective",
+  };
+}
+
+function checkEfficiencyViolations(inlet, outlet) {
+  const eff = checkEffectiveness(inlet, outlet);
+  return eff.issues.map((issue) => ({
+    parameter: issue.type === "LOW_TDS_REDUCTION" ? "tds" : "ph",
+    location: "efficiency",
+    value:
+      issue.type === "LOW_TDS_REDUCTION"
+        ? eff.reductions.tds.toFixed(1)
+        : eff.reductions.ph_change.toFixed(2),
+    threshold:
+      issue.type === "LOW_TDS_REDUCTION"
+        ? EFFECTIVENESS_TARGET.tds_reduction
+        : "0.3-1.5",
+    condition:
+      issue.type === "LOW_TDS_REDUCTION"
+        ? "insufficient_reduction"
+        : "ph_change_issue",
+    severity: issue.severity,
+    message:
+      issue.type === "LOW_TDS_REDUCTION"
+        ? `Efisiensi TDS rendah (${eff.reductions.tds.toFixed(1)}%). IPAL harus mengurangi TDS minimal ${EFFECTIVENESS_TARGET.tds_reduction}%`
+        : `Perubahan pH ${eff.reductions.ph_change.toFixed(2)} tidak optimal (target: 0.3-1.5)`,
+  }));
+}
+
+function evaluateTreatmentEffectiveness(inlet, outlet) {
+  const eff = checkEffectiveness(inlet, outlet);
+  return {
+    isEffective: eff.effective,
+    improvements: { tds: eff.reductions.tds },
+  };
+}
+
+// --- 3C: Generate Rekomendasi ---
+// Berdasarkan: sensor faults + violations + effectiveness issues
+// (BUKAN berdasarkan fuzzy score)
+
 function generateRecommendations(
   outletScore,
   effectiveness,
@@ -444,57 +502,22 @@ function generateRecommendations(
   return recs;
 }
 
-// ========================================
-// SENSOR HEALTH ADAPTER
-// ========================================
-/**
- * Convert preprocessSensorData output to backward-compatible sensorHealth format
- * used by generateRecommendations, alerts building, and result output.
- */
-function buildSensorHealthFromPreprocessed(preprocessed) {
-  if (!preprocessed.has_faults) {
-    return {
-      count: 0,
-      confidence_score: 100,
-      faults: [],
-      all_healthy: true,
-    };
-  }
+// ╔══════════════════════════════════════╗
+// ║  PART 4: ORCHESTRATOR — analyze()   ║
+// ║  (gabungkan Sistem 1 + Sistem 2)    ║
+// ╚══════════════════════════════════════╝
+//
+// Ini fungsi utama yang dipanggil oleh waterQualityService.
+// Alur:
+//   STEP 1: Preprocessing sensor        → data bersih
+//   STEP 2: Mamdani engine (SISTEM 1)   → quality_score + status
+//   STEP 3: Fallback scoring            → outletScore + effectiveness
+//   STEP 4: Violations (SISTEM 2)       → violations[]
+//   STEP 5: Recommendations (SISTEM 2)  → recommendations[]
+//   STEP 6: Final score                 → Mamdani score × confidence
+//   STEP 7: Build alerts                → simpleAlerts[]
+//   RETURN: Semua digabung jadi satu objek
 
-  const faults = [];
-  if (preprocessed.imputation_log) {
-    preprocessed.imputation_log.forEach((log) => {
-      faults.push({
-        sensor: `${log.location}.${log.parameter}`,
-        location: log.location,
-        parameter: log.parameter,
-        original_value: log.original_value,
-        replaced_with: log.imputed_value,
-        message: `Sensor ${log.location}.${log.parameter} rusak`,
-      });
-    });
-  }
-
-  return {
-    count: preprocessed.faults?.count || faults.length,
-    confidence_score: preprocessed.confidence_score,
-    faults,
-    all_healthy: false,
-  };
-}
-
-// ========================================
-// MAIN ANALYSIS (FUZZY MAMDANI ENGINE)
-// ========================================
-/**
- * Analyze water quality data with Fuzzy Mamdani engine.
- * Uses Gaussian membership, 27 fuzzy rules, centroid defuzzification.
- * Falls back to simple scoring if Mamdani engine fails.
- *
- * @param {Object} inlet - Inlet sensor data { ph, tds, temperature }
- * @param {Object} outlet - Outlet sensor data { ph, tds, temperature }
- * @returns {Object} Analysis result with score, status, violations
- */
 async function analyze(inlet, outlet, ipalId) {
   try {
     console.log("🧠 Analyzing water quality (Fuzzy Mamdani)...");
@@ -505,7 +528,7 @@ async function analyze(inlet, outlet, ipalId) {
     const inletOriginal = { ...inlet };
     const outletOriginal = { ...outlet };
 
-    // ===== STEP 1: Sensor Preprocessing =====
+    // ===== STEP 1: Sensor Preprocessing (PART 1) =====
     // Uses last known value → safe default fallback
     let preprocessed;
     let sensorHealth;
@@ -531,9 +554,9 @@ async function analyze(inlet, outlet, ipalId) {
       };
     }
 
-    // ===== STEP 2: Run Mamdani Engine =====
+    // ===== STEP 2: Run Mamdani Engine — SISTEM 1 (PART 2) =====
     // Gaussian membership → 27 fuzzy rules (MIN-MAX) → Centroid defuzzification
-    // → Dynamic weighting → 6-level alerts
+    // → Dynamic weighting → quality_score + status
     let mamdaniResult;
 
     try {
@@ -549,16 +572,16 @@ async function analyze(inlet, outlet, ipalId) {
       mamdaniResult = null;
     }
 
-    // ===== STEP 3: Backward-compatible scoring =====
+    // ===== STEP 3: Fallback scoring (PART 2 fallback) =====
     const outletScore = scoreOutlet(outlet);
     const effectiveness = checkEffectiveness(inlet, outlet);
 
-    // ===== STEP 4: Violations (backward-compatible format) =====
-    // Uses same checkThresholdViolations for exact format compatibility
-    // with createAlertsForViolations() in waterQualityService
+    // ===== STEP 4: Violations — SISTEM 2 (PART 3) =====
+    // Cek outlet vs baku mutu pemerintah (threshold sederhana)
     const violations = checkThresholdViolations(outlet);
 
-    // ===== STEP 5: Recommendations =====
+    // ===== STEP 5: Recommendations — SISTEM 2 (PART 3) =====
+    // Berdasarkan violations + effectiveness, BUKAN fuzzy score
     const recommendations = generateRecommendations(
       outletScore,
       effectiveness,
@@ -624,27 +647,30 @@ async function analyze(inlet, outlet, ipalId) {
     console.log(`   Effectiveness issues: ${effectiveness_issues.length}`);
     console.log(`   Sensor faults: ${sensor_faults.length}`);
 
+    // ===== RETURN: Gabungkan SISTEM 1 + SISTEM 2 =====
     return {
-      // === Backward-compatible fields (used by waterQualityService) ===
+      // --- Dari SISTEM 1 (Fuzzy Mamdani): score + status ---
       quality_score: finalScore,
       status: status,
+      final_score: finalScore,
+      overall_status: status,
+      analysis_method: mamdaniResult
+        ? "fuzzy_mamdani"
+        : "simplified_fuzzy_logic",
+
+      // --- Dari SISTEM 2 (Baku Mutu): violations + recommendations ---
       violations: violations, // Top-level for createAlertsForViolations
       effectiveness_issues: effectiveness_issues,
       sensor_faults: sensor_faults,
       alert_count: violations.length,
       recommendations: recommendations,
-      analysis_method: mamdaniResult
-        ? "fuzzy_mamdani"
-        : "simplified_fuzzy_logic",
-      efficiency: calculateEfficiency(inlet, outlet),
 
-      // === Input/Output data ===
+      // --- Data input/output ---
       input: { inlet: inletOriginal, outlet: outletOriginal },
       processed: { inlet, outlet },
-      final_score: finalScore,
-      overall_status: status,
+      efficiency: calculateEfficiency(inlet, outlet),
 
-      // === Fuzzy Mamdani analysis details ===
+      // --- Detail Fuzzy Mamdani (SISTEM 1) ---
       fuzzy_analysis: mamdaniResult
         ? {
             outlet: {
@@ -682,10 +708,11 @@ async function analyze(inlet, outlet, ipalId) {
             },
           },
 
+      // --- Detail scoring (backward compat) ---
       outlet_quality: outletScore,
       ipal_effectiveness: effectiveness,
 
-      // === Sensor status ===
+      // --- Sensor status ---
       sensor_status: {
         ...sensorHealth,
         faults: { count: sensorHealth.count, ...sensorHealth },
@@ -702,18 +729,18 @@ async function analyze(inlet, outlet, ipalId) {
       sensor_alert_count: sensorHealth.count,
       fuzzy_alert_count: effectiveness.issues.length + violations.length,
 
-      // === Compliance ===
+      // --- Compliance (SISTEM 2 summary) ---
       compliance: {
         is_compliant: violations.length === 0,
         violations,
         standard: "Baku Mutu Pemerintah",
       },
 
-      // === Alerts ===
+      // --- Alerts ---
       alerts: simpleAlerts,
       mamdani_alerts: [],
 
-      // === Metadata ===
+      // --- Metadata ---
       analyzed_at: new Date().toISOString(),
       defuzzification_method: mamdaniResult ? "centroid" : "weighted_average",
       membership_type: mamdaniResult ? "gaussian" : "linear",
@@ -726,9 +753,7 @@ async function analyze(inlet, outlet, ipalId) {
   }
 }
 
-// ========================================
-// FORMAT REPORT
-// ========================================
+// --- Format report (text summary) ---
 function formatAnalysisSummary(result) {
   const inp = result.input?.inlet || {};
   const out = result.input?.outlet || {};
@@ -774,9 +799,10 @@ ${result.recommendations.length > 0 ? `📋 REKOMENDASI TINDAKAN:\n${result.reco
 `;
 }
 
-// ========================================
-// EXPORTS
-// ========================================
+// ╔══════════════════════════════════════╗
+// ║  PART 5: EXPORTS                    ║
+// ╚══════════════════════════════════════╝
+
 module.exports = {
   // Main functions
   analyze,
