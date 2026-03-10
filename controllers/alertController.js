@@ -42,54 +42,6 @@ exports.getAlerts = async (req, res) => {
 };
 
 /**
- * GET ALERT BY ID
- * Endpoint: GET /api/alerts/:id
- */
-exports.getAlertById = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const alertData = await alertService.getAlertById(id);
-
-    return res.status(200).json({
-      success: true,
-      data: alertData,
-    });
-  } catch (error) {
-    console.error("💥 Error fetching alert:", error);
-    return res.status(error.status || 500).json({
-      success: false,
-      message: error.status ? error.message : "Failed to fetch alert",
-      error: error.message,
-    });
-  }
-};
-
-/**
- * MARK ALERT AS READ
- * Endpoint: PUT /api/alerts/:id/read
- */
-exports.markAsRead = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const user = req.user; // From auth middleware
-    const result = await alertService.markAsRead(id, user);
-
-    return res.status(200).json({
-      success: true,
-      message: "Alert marked as read",
-      data: result,
-    });
-  } catch (error) {
-    console.error("💥 Error marking alert as read:", error);
-    return res.status(error.status || 500).json({
-      success: false,
-      message: error.status ? error.message : "Failed to mark alert as read",
-      error: error.message,
-    });
-  }
-};
-
-/**
  * UPDATE ALERT STATUS
  * Endpoint: PUT /api/alerts/:id/status
  * Body: { status: "acknowledged" | "resolved" }

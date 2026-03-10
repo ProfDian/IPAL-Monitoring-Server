@@ -30,7 +30,7 @@ exports.login = async (req, res) => {
     res.cookie("token", token, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
-      maxAge: 6 * 60 * 60 * 1000, // 6 hours
+      maxAge: 1 * 60 * 60 * 1000, // 1 hour
     });
 
     // Response
@@ -50,30 +50,6 @@ exports.login = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Login failed",
-      error: error.message,
-    });
-  }
-};
-
-/**
- * LOGOUT (EXISTING - keep as is)
- */
-exports.logout = async (req, res) => {
-  try {
-    // Clear token cookie
-    res.clearCookie("token");
-
-    console.log("✅ Logout successful");
-
-    return res.status(200).json({
-      success: true,
-      message: "Logout successful",
-    });
-  } catch (error) {
-    console.error("💥 Logout error:", error);
-    return res.status(500).json({
-      success: false,
-      message: "Logout failed",
       error: error.message,
     });
   }

@@ -321,92 +321,6 @@ async function updateSensor(id, data, user) {
 }
 
 /**
- * Get sensor online/offline status
- * @param {string} id
- * @returns {Promise<object>} Status data
- * @throws {Error} with status 404 if not found
- */
-async function getSensorStatus(id) {
-  console.log(`🔍 Checking sensor status: ${id}`);
-
-  const sensorDoc = await db.collection("sensors").doc(id).get();
-
-  if (!sensorDoc.exists) {
-    const error = new Error(`Sensor with ID ${id} not found`);
-    error.status = 404;
-    throw error;
-  }
-
-  const sensorData = sensorDoc.data();
-
-  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000);
-  const tenMinutesAgoTimestamp =
-    admin.firestore.Timestamp.fromDate(tenMinutesAgo);
-
-  const recentReadings = await db
-    .collection("water_quality_readings")
-    .where("ipal_id", "==", sensorData.ipal_id)
-    .where("timestamp", ">=", tenMinutesAgoTimestamp)
-    .orderBy("timestamp", "desc")
-    .limit(1)
-    .get();
-
-  const isOnline = !recentReadings.empty;
-
-  let lastReading = null;
-  if (!recentReadings.empty) {
-    const doc = recentReadings.docs[0];
-    lastReading = {
-      timestamp: doc.data().timestamp?.toDate().toISOString(),
-      data: doc.data(),
-    };
-  }
-
-  console.log(`✅ Sensor status: ${isOnline ? "online" : "offline"}`);
-
-  return {
-    sensor_id: id,
-    ipal_id: sensorData.ipal_id,
-    sensor_type: sensorData.sensor_type,
-    status: isOnline ? "online" : "offline",
-    last_reading: lastReading,
-  };
-}
-
-/**
- * Get all sensors for specific IPAL
- * @param {number|string} ipal_id
- * @returns {Promise<object>} { sensors, count }
- */
-async function getSensorsByIpal(ipal_id) {
-  console.log(`📊 Fetching sensors for IPAL: ${ipal_id}`);
-
-  const snapshot = await db
-    .collection("sensors")
-    .where("ipal_id", "==", parseInt(ipal_id))
-    .orderBy("added_at", "desc")
-    .get();
-
-  if (snapshot.empty) {
-    return { sensors: [], count: 0 };
-  }
-
-  const sensors = [];
-  snapshot.forEach((doc) => {
-    sensors.push({
-      id: doc.id,
-      ...doc.data(),
-      added_at: doc.data().added_at?.toDate
-        ? doc.data().added_at.toDate().toISOString()
-        : null,
-    });
-  });
-
-  console.log(`✅ Found ${sensors.length} sensors for IPAL ${ipal_id}`);
-  return { sensors, count: sensors.length };
-}
-
-/**
  * Get latest reading for specific sensor (optimized with mapping field, cached)
  * @param {string} id - Sensor ID
  * @returns {Promise<object>} { sensor, latest_reading }
@@ -767,8 +681,6 @@ module.exports = {
   getAllSensors,
   getSensorById,
   updateSensor,
-  getSensorStatus,
-  getSensorsByIpal,
   getLatestReadingBySensor,
   getSensorHistory,
   createSensor,

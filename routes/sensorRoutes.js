@@ -101,18 +101,6 @@ router.delete(
 );
 
 /**
- * GET /api/sensors/:id/status
- * Get sensor status (online/offline) based on last reading
- * Cache: 30 seconds
- */
-router.get(
-  "/:id/status",
-  requireAuth,
-  cacheMiddleware(30),
-  sensorController.getSensorStatus,
-);
-
-/**
  * GET /api/sensors/:id/latest
  * Get latest reading for specific sensor
  * Cache: 25 seconds

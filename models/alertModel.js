@@ -88,32 +88,6 @@ const getAlerts = async () => {
 };
 
 /**
- * Get alert by ID
- * @param {String} alertId - Alert document ID
- * @returns {Object} alert - Alert document data
- */
-const getAlertById = async (alertId) => {
-  try {
-    const alertRef = admin.firestore().collection("alerts").doc(alertId);
-    const doc = await alertRef.get();
-
-    if (!doc.exists) {
-      throw new Error("Alert not found");
-    }
-
-    console.log(`📋 Retrieved alert: ${alertId}`);
-
-    return {
-      id: doc.id,
-      ...doc.data(),
-    };
-  } catch (error) {
-    console.error("❌ Error fetching alert:", error);
-    throw new Error("Error fetching alert: " + error.message);
-  }
-};
-
-/**
  * Get alerts by reading ID
  * @param {String} readingId - Water quality reading ID
  * @returns {Array} alerts - Array of alerts for this reading
@@ -348,7 +322,6 @@ module.exports = {
 
   // Read operations
   getAlerts,
-  getAlertById,
   getAlertsByReadingId,
   getActiveAlerts,
 

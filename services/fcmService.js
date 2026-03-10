@@ -252,20 +252,6 @@ async function subscribeToTopic(fcmToken, topic) {
   }
 }
 
-/**
- * Unsubscribe user from notification topic
- */
-async function unsubscribeFromTopic(fcmToken, topic) {
-  try {
-    await admin.messaging().unsubscribeFromTopic([fcmToken], topic);
-    console.log(`✅ Unsubscribed from topic: ${topic}`);
-    return { success: true };
-  } catch (error) {
-    console.error(`❌ Failed to unsubscribe from topic:`, error.message);
-    return { success: false, error: error.message };
-  }
-}
-
 // ========================================
 // EXPORTS
 // ========================================
@@ -275,7 +261,6 @@ module.exports = {
   sendPushNotificationToMultiple,
   sendPushNotificationToTopic,
   subscribeToTopic,
-  unsubscribeFromTopic,
 };
 
 console.log("📦 fcmService loaded");

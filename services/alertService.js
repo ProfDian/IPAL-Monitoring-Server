@@ -111,81 +111,6 @@ async function getAlerts({
 }
 
 /**
- * Get alert by ID with optional related reading data
- * @param {string} id - Alert document ID
- * @returns {Promise<object>} Alert data
- * @throws {Error} with status 404 if not found
- */
-async function getAlertById(id) {
-  console.log(`📋 Fetching alert: ${id}`);
-
-  const alertDoc = await db.collection("alerts").doc(id).get();
-
-  if (!alertDoc.exists) {
-    const error = new Error(`Alert with ID ${id} not found`);
-    error.status = 404;
-    throw error;
-  }
-
-  const alertData = {
-    id: alertDoc.id,
-    ...alertDoc.data(),
-    timestamp: alertDoc.data().timestamp?.toDate
-      ? alertDoc.data().timestamp.toDate().toISOString()
-      : null,
-    created_at: alertDoc.data().created_at?.toDate
-      ? alertDoc.data().created_at.toDate().toISOString()
-      : null,
-  };
-
-  // Optional: Get related reading data
-  if (alertData.reading_id) {
-    const readingDoc = await db
-      .collection("water_quality_readings")
-      .doc(alertData.reading_id)
-      .get();
-
-    if (readingDoc.exists) {
-      alertData.reading_data = readingDoc.data();
-    }
-  }
-
-  console.log(`✅ Alert found: ${id}`);
-  return alertData;
-}
-
-/**
- * Mark alert as read
- * @param {string} id - Alert document ID
- * @param {object} user - User object with uid and email
- * @returns {Promise<{alert_id: string, read_by: string}>}
- * @throws {Error} with status 404 if not found
- */
-async function markAsRead(id, user) {
-  console.log(`👁️ Marking alert as read: ${id}`);
-
-  const alertRef = db.collection("alerts").doc(id);
-  const alertDoc = await alertRef.get();
-
-  if (!alertDoc.exists) {
-    const error = new Error(`Alert with ID ${id} not found`);
-    error.status = 404;
-    throw error;
-  }
-
-  // Update alert
-  await alertRef.update({
-    read: true,
-    read_by: user.uid,
-    read_at: admin.firestore.FieldValue.serverTimestamp(),
-    updated_at: admin.firestore.FieldValue.serverTimestamp(),
-  });
-
-  console.log(`✅ Alert marked as read: ${id}`);
-  return { alert_id: id, read_by: user.email };
-}
-
-/**
  * Update alert status
  * @param {string} id - Alert document ID
  * @param {string} status - New status
@@ -349,8 +274,6 @@ async function getAlertStats(ipal_id) {
 
 module.exports = {
   getAlerts,
-  getAlertById,
-  markAsRead,
   updateAlertStatus,
   deleteAlert,
   getAlertStats,

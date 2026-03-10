@@ -45,18 +45,6 @@ router.get(
 );
 
 /**
- * GET /api/alerts/:id
- * Get specific alert by ID
- */
-router.get("/:id", requireAuth, alertController.getAlertById);
-
-/**
- * PUT /api/alerts/:id/read
- * Mark alert as read
- */
-router.put("/:id/read", requireAuth, alertController.markAsRead);
-
-/**
  * PUT /api/alerts/:id/status
  * Update alert status
  * Body: { status: "acknowledged" | "resolved" }

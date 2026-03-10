@@ -3,7 +3,6 @@
  * SENSOR CONTROLLER (REFACTORED)
  * ========================================
  * Thin controller layer - delegates business logic to sensorService
- * All 11 exported functions preserved with original response shapes
  */
 
 const sensorService = require("../services/sensorService");
@@ -29,32 +28,6 @@ exports.getReadings = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to fetch readings",
-      error: error.message,
-    });
-  }
-};
-
-// GET /api/sensors/latest/:ipal_id
-exports.getLatestReading = async (req, res) => {
-  try {
-    const { ipal_id } = req.params;
-    const reading = await sensorService.getLatestReading(ipal_id);
-
-    return res.status(200).json({
-      success: true,
-      data: reading,
-    });
-  } catch (error) {
-    console.error("💥 Error fetching latest reading:", error);
-    if (error.status) {
-      return res.status(error.status).json({
-        success: false,
-        message: error.message,
-      });
-    }
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch latest reading",
       error: error.message,
     });
   }
@@ -136,59 +109,6 @@ exports.updateSensor = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to update sensor",
-      error: error.message,
-    });
-  }
-};
-
-// GET /api/sensors/:id/status
-exports.getSensorStatus = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const status = await sensorService.getSensorStatus(id);
-
-    return res.status(200).json({
-      success: true,
-      data: status,
-    });
-  } catch (error) {
-    console.error("💥 Error checking sensor status:", error);
-    if (error.status) {
-      return res.status(error.status).json({
-        success: false,
-        message: error.message,
-      });
-    }
-    return res.status(500).json({
-      success: false,
-      message: "Failed to check sensor status",
-      error: error.message,
-    });
-  }
-};
-
-// GET /api/sensors/ipal/:ipal_id
-exports.getSensorsByIpal = async (req, res) => {
-  try {
-    const { ipal_id } = req.params;
-    const result = await sensorService.getSensorsByIpal(ipal_id);
-
-    return res.status(200).json({
-      success: true,
-      count: result.count,
-      data: result.sensors,
-    });
-  } catch (error) {
-    console.error("💥 Error fetching sensors by IPAL:", error);
-    if (error.status) {
-      return res.status(error.status).json({
-        success: false,
-        message: error.message,
-      });
-    }
-    return res.status(500).json({
-      success: false,
-      message: "Failed to fetch sensors",
       error: error.message,
     });
   }

@@ -1,6 +1,6 @@
 /**
  * ========================================
- * IPAL CONTROLLER (REFACTORED)
+ * IPAL CONTROLLER
  * ========================================
  * Thin controller layer - delegates business logic to ipalService
  */
@@ -47,25 +47,6 @@ exports.getIpalById = async (req, res) => {
     return res.status(500).json({
       success: false,
       message: "Failed to fetch IPAL",
-      error: error.message,
-    });
-  }
-};
-
-exports.getIpalStats = async (req, res) => {
-  try {
-    const { ipal_id } = req.params;
-    const stats = await ipalService.getIpalStats(ipal_id);
-
-    return res.status(200).json({
-      success: true,
-      data: stats,
-    });
-  } catch (error) {
-    console.error("💥 Error fetching IPAL stats:", error);
-    return res.status(error.status || 500).json({
-      success: false,
-      message: error.status ? error.message : "Failed to fetch IPAL statistics",
       error: error.message,
     });
   }

@@ -36,18 +36,6 @@ const { requireAuth } = require("../middleware/authMiddleware");
 router.post("/login", authController.login);
 
 /**
- * POST /auth/logout
- * Logout user
- *
- * Response:
- * {
- *   "success": true,
- *   "message": "Logout successful"
- * }
- */
-router.post("/logout", authController.logout);
-
-/**
  * POST /auth/check-email
  * Check if email exists in the system
  * Used for forgot password validation

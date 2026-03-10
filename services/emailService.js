@@ -410,61 +410,12 @@ function generateAlertEmailHTML(alertData) {
   `;
 }
 
-/**
- * Send test email with sample alert data
- * Used to verify email service is working
- */
-async function sendTestEmail(recipientEmail) {
-  try {
-    console.log("🧪 Sending test email...");
-
-    // Sample alert data for testing
-    const testAlertData = {
-      rule: "Test Alert - Water Quality Check",
-      message:
-        "This is a test email to verify the notification system is working correctly.",
-      ipal_id: "IPAL-UNDIP-001",
-      severity: "medium",
-      timestamp: new Date(),
-      violations: [
-        {
-          parameter: "pH",
-          location: "outlet",
-          value: 9.5,
-          threshold: "6.0 - 9.0",
-          severity: "high",
-          message: "pH outlet (9.50) melebihi batas aman (9.0)",
-        },
-        {
-          parameter: "TDS",
-          location: "outlet",
-          value: 650,
-          threshold: "500 ppm",
-          severity: "medium",
-          message: "TDS outlet (650 ppm) melebihi batas aman (500 ppm)",
-        },
-      ],
-    };
-
-    const result = await sendWaterQualityAlert(testAlertData, [recipientEmail]);
-
-    return result;
-  } catch (error) {
-    console.error("❌ Failed to send test email:", error);
-    return {
-      success: false,
-      error: error.message,
-    };
-  }
-}
-
 // ========================================
 // EXPORTS
 // ========================================
 
 module.exports = {
   sendWaterQualityAlert,
-  sendTestEmail,
   initializeEmailService,
 };
 

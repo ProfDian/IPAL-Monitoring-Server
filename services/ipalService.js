@@ -158,106 +158,6 @@ async function getIpalById(ipal_id) {
 }
 
 /**
- * Get IPAL statistics
- * @param {number|string} ipal_id
- * @returns {Promise<object>} Statistics
- */
-async function getIpalStats(ipal_id) {
-  console.log(`📊 Fetching statistics for IPAL: ${ipal_id}`);
-
-  const cacheKey = `ipal:${ipal_id}:stats`;
-
-  const stats = await cacheService.getCached(
-    cacheKey,
-    async () => {
-      const [
-        totalSensors,
-        activeSensors,
-        inactiveSensors,
-        activeAlerts,
-        criticalAlerts,
-        totalReadings,
-        readingsToday,
-      ] = await Promise.all([
-        db
-          .collection("sensors")
-          .where("ipal_id", "==", parseInt(ipal_id))
-          .count()
-          .get()
-          .then((snapshot) => snapshot.data().count),
-        db
-          .collection("sensors")
-          .where("ipal_id", "==", parseInt(ipal_id))
-          .where("status", "==", "active")
-          .count()
-          .get()
-          .then((snapshot) => snapshot.data().count),
-        db
-          .collection("sensors")
-          .where("ipal_id", "==", parseInt(ipal_id))
-          .where("status", "==", "inactive")
-          .count()
-          .get()
-          .then((snapshot) => snapshot.data().count),
-        db
-          .collection("alerts")
-          .where("ipal_id", "==", parseInt(ipal_id))
-          .where("status", "==", "active")
-          .count()
-          .get()
-          .then((snapshot) => snapshot.data().count),
-        db
-          .collection("alerts")
-          .where("ipal_id", "==", parseInt(ipal_id))
-          .where("status", "==", "active")
-          .where("severity", "==", "critical")
-          .count()
-          .get()
-          .then((snapshot) => snapshot.data().count),
-        db
-          .collection("water_quality_readings")
-          .where("ipal_id", "==", parseInt(ipal_id))
-          .count()
-          .get()
-          .then((snapshot) => snapshot.data().count),
-        (async () => {
-          const today = new Date();
-          today.setHours(0, 0, 0, 0);
-          const snapshot = await db
-            .collection("water_quality_readings")
-            .where("ipal_id", "==", parseInt(ipal_id))
-            .where("timestamp", ">=", admin.firestore.Timestamp.fromDate(today))
-            .count()
-            .get();
-          return snapshot.data().count;
-        })(),
-      ]);
-
-      return {
-        ipal_id: parseInt(ipal_id),
-        sensors: {
-          total: totalSensors,
-          active: activeSensors,
-          inactive: inactiveSensors,
-        },
-        alerts: {
-          active: activeAlerts,
-          critical: criticalAlerts,
-        },
-        readings: {
-          total: totalReadings,
-          today: readingsToday,
-        },
-      };
-    },
-    180,
-  );
-
-  console.log(`✅ Statistics fetched for IPAL ${ipal_id}`);
-  return stats;
-}
-
-/**
  * Create new IPAL
  * @param {object} data - IPAL data
  * @param {object} user - Requesting user
@@ -491,7 +391,6 @@ async function deleteIpal(ipal_id, user) {
 module.exports = {
   getAllIpals,
   getIpalById,
-  getIpalStats,
   createIpal,
   updateIpal,
   deleteIpal,
