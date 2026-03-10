@@ -727,32 +727,26 @@ async function updateSensorsFromReading(
   }
 }
 
-/**
- * ========================================
- * EXPORTS
- * ========================================
- */
+// ╔══════════════════════════════════════╗
+// ║  EXPORTS (PUBLIC API ONLY)          ║
+// ╚══════════════════════════════════════╝
+//
+// Hanya 4 fungsi publik yang dipakai controller:
+//   submitReading          → POST /submit (ESP32 endpoint)
+//   getBufferStatus        → GET /buffer-status (monitoring)
+//   cleanupExpiredBuffer   → DELETE /cleanup-buffer (maintenance)
+//   checkIncompleteReadings → GET /incomplete (monitoring)
+//
+// Fungsi internal (TIDAK di-export, hanya dipanggil internal):
+//   tryMerge, processCompleteReading,
+//   createAlertsForViolations, sendNotificationsForAlerts,
+//   updateSensorsFromReading, validateReadingInput
 
 module.exports = {
-  // Main functions
   submitReading,
-  tryMerge,
-  processCompleteReading,
-
-  // Alert & notification helpers
-  createAlertsForViolations,
-  sendNotificationsForAlerts,
-
-  // Sensor update (NEW!)
-  updateSensorsFromReading,
-
-  // Monitoring & debugging
   getBufferStatus,
   cleanupExpiredBuffer,
   checkIncompleteReadings,
-
-  // Configuration (exported for reference)
-  CONFIG,
 };
 
 console.log("📦 waterQualityService (orchestrator) loaded");
