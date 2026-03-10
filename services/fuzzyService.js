@@ -260,7 +260,7 @@ function checkThresholdViolations(outlet) {
   const violations = [];
 
   // pH: 6.0 - 9.0
-  if (outlet.ph < 6.0 || outlet.ph > 9.0) {
+  if (outlet.ph != null && (outlet.ph < 6.0 || outlet.ph > 9.0)) {
     const isBelow = outlet.ph < 6.0;
     violations.push({
       parameter: "ph",
@@ -275,7 +275,7 @@ function checkThresholdViolations(outlet) {
   }
 
   // TDS: ≤4000 mg/L
-  if (outlet.tds > 4000) {
+  if (outlet.tds != null && outlet.tds > 4000) {
     violations.push({
       parameter: "tds",
       location: "outlet",
@@ -288,7 +288,7 @@ function checkThresholdViolations(outlet) {
   }
 
   // Temperature: ≤40°C
-  if (outlet.temperature > 40) {
+  if (outlet.temperature != null && outlet.temperature > 40) {
     violations.push({
       parameter: "temperature",
       location: "outlet",
@@ -651,7 +651,7 @@ async function analyze(inlet, outlet, ipalId) {
               score: mamdaniResult.outlet_analysis.score,
               status: mamdaniResult.outlet_analysis.status,
               membership: mamdaniResult.outlet_analysis.fuzzy_membership,
-              compliance: mamdaniResult.outlet_analysis.compliance,
+              compliance: violations.length === 0,
             },
             effectiveness: {
               score: mamdaniResult.effectiveness_analysis.score,
@@ -711,7 +711,7 @@ async function analyze(inlet, outlet, ipalId) {
 
       // === Alerts ===
       alerts: simpleAlerts,
-      mamdani_alerts: mamdaniResult ? mamdaniResult.alerts : [],
+      mamdani_alerts: [],
 
       // === Metadata ===
       analyzed_at: new Date().toISOString(),

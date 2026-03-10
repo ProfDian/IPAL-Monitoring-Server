@@ -455,43 +455,53 @@ async function testFormatReport() {
 }
 
 // ========================================
-// TEST 10: MAMDANI ALERTS (6-level system)
+// TEST 10: MAMDANI OUTPUT STRUCTURE
 // ========================================
 async function testMamdaniAlerts() {
   console.log("\n═══════════════════════════════════════════");
-  console.log("TEST 10: MAMDANI 6-LEVEL ALERTS");
+  console.log("TEST 10: MAMDANI OUTPUT STRUCTURE");
   console.log("═══════════════════════════════════════════");
 
-  // Violation scenario should have Mamdani CRITICAL alerts
+  // Violation scenario
   const r = await fuzzyService.analyze(
     { ph: 3.5, tds: 8000, temperature: 35 },
     { ph: 5.2, tds: 6500, temperature: 42 },
   );
 
+  // mamdani_alerts is now empty (alerts handled by fuzzyService)
   assert(Array.isArray(r.mamdani_alerts), "mamdani_alerts is array");
   assert(
-    r.mamdani_alerts.length > 0,
-    "has mamdani alerts for violation scenario",
+    r.mamdani_alerts.length === 0,
+    "mamdani_alerts is empty (alerts delegated to fuzzyService)",
     `got ${r.mamdani_alerts.length}`,
   );
 
-  // Each alert should have standard fields
-  if (r.mamdani_alerts.length > 0) {
-    const a = r.mamdani_alerts[0];
-    assertExists(a.level, "mamdani alert has level");
-    assertExists(a.type, "mamdani alert has type");
-    assertExists(a.message, "mamdani alert has message");
-    assertExists(a.severity, "mamdani alert has severity");
-    assertExists(a.priority, "mamdani alert has priority");
-  }
+  // Simple alerts from fuzzyService should exist instead
+  assert(Array.isArray(r.alerts), "alerts array exists from fuzzyService");
 
-  // Optimal scenario should have INFO level
+  // Fuzzy analysis details should still exist
+  assertExists(r.fuzzy_analysis, "fuzzy_analysis details exist");
+  assertExists(r.fuzzy_analysis.outlet, "fuzzy_analysis.outlet exists");
+  assertExists(
+    r.fuzzy_analysis.effectiveness,
+    "fuzzy_analysis.effectiveness exists",
+  );
+  assertExists(
+    r.fuzzy_analysis.scoring_weights,
+    "fuzzy_analysis.scoring_weights exists",
+  );
+
+  // Optimal scenario
   const r2 = await fuzzyService.analyze(
     { ph: 4.2, tds: 6000, temperature: 33 },
     { ph: 7.5, tds: 2200, temperature: 30 },
   );
 
   assert(Array.isArray(r2.mamdani_alerts), "mamdani_alerts exists for optimal");
+  assert(
+    r2.mamdani_alerts.length === 0,
+    "mamdani_alerts empty for optimal too",
+  );
 }
 
 // ========================================

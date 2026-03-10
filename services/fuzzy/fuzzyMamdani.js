@@ -338,26 +338,6 @@ async function analyze(inlet, outlet) {
       determineEffectivenessStatus(effectivenessScore);
     const overallStatus = determineStatus(Math.round(finalScore));
 
-    // ===== STEP 6: COMPLIANCE CHECK =====
-    const compliance = checkCompliance(outlet);
-
-    // ===== STEP 7: GENERATE ALERTS =====
-    const alerts = generateAlerts(
-      inlet,
-      outlet,
-      outletScore,
-      effectivenessScore,
-      effectiveness,
-      compliance,
-    );
-
-    // ===== STEP 8: RECOMMENDATIONS =====
-    const recommendations = generateRecommendations(
-      alerts,
-      effectiveness,
-      compliance,
-    );
-
     const result = {
       // Overall scores
       final_score: Math.round(finalScore),
@@ -368,8 +348,6 @@ async function analyze(inlet, outlet) {
         score: outletScore,
         status: outletStatus,
         fuzzy_membership: outletQualityFuzzy,
-        compliance: compliance.is_compliant,
-        violations: compliance.violations,
       },
 
       // Effectiveness analysis
@@ -391,11 +369,6 @@ async function analyze(inlet, outlet) {
         reason: getWeightReason(weights),
       },
 
-      // Alerts & recommendations
-      alerts: alerts,
-      alert_count: alerts.length,
-      recommendations: recommendations,
-
       // Metadata
       analysis_method: "fuzzy_mamdani_phase2",
       defuzzification_method: "centroid",
@@ -409,7 +382,6 @@ async function analyze(inlet, outlet) {
     console.log(
       `   Effectiveness: ${effectivenessScore}/100 (${effectivenessStatus})`,
     );
-    console.log(`   Alerts: ${alerts.length}`);
 
     return result;
   } catch (error) {
@@ -436,338 +408,6 @@ function determineEffectivenessStatus(score) {
   if (score >= 60) return "efektif";
   if (score >= 40) return "kurang_efektif";
   return "tidak_efektif";
-}
-
-/**
- * ========================================
- * COMPLIANCE CHECK
- * ========================================
- */
-function checkCompliance(outlet) {
-  const violations = [];
-
-  // Baku Mutu Pemerintah
-  if (outlet.ph < 6.0 || outlet.ph > 9.0) {
-    violations.push({
-      parameter: "ph",
-      value: outlet.ph,
-      limit: "6.0 - 9.0",
-      severity: "critical",
-    });
-  }
-
-  if (outlet.tds > 4000) {
-    violations.push({
-      parameter: "tds",
-      value: outlet.tds,
-      limit: "≤ 4000 mg/L",
-      severity: "critical",
-    });
-  }
-
-  if (outlet.temperature > 40) {
-    violations.push({
-      parameter: "temperature",
-      value: outlet.temperature,
-      limit: "≤ 40°C",
-      severity: "critical",
-    });
-  }
-
-  return {
-    is_compliant: violations.length === 0,
-    violations: violations,
-  };
-}
-
-/**
- * ========================================
- * ALERT GENERATION (6 LEVELS)
- * ========================================
- */
-function generateAlerts(
-  inlet,
-  outlet,
-  outletScore,
-  effectivenessScore,
-  effectiveness,
-  compliance,
-) {
-  const alerts = [];
-
-  // 1. CRITICAL ALERTS (Compliance violations)
-  if (!compliance.is_compliant) {
-    compliance.violations.forEach((violation) => {
-      alerts.push({
-        level: "CRITICAL",
-        type: "compliance_violation",
-        parameter: violation.parameter,
-        message: `${violation.parameter.toUpperCase()} outlet tidak memenuhi baku mutu (${
-          violation.value
-        } vs limit ${violation.limit})`,
-        severity: "critical",
-        priority: 1,
-        action_required: "Immediate action - Stop discharge if necessary",
-        timestamp: new Date().toISOString(),
-      });
-    });
-  }
-
-  // 2. ANOMALY ALERTS (Unusual patterns)
-  // pH outlet worse than inlet (should not happen)
-  if (
-    inlet.ph >= 6.0 &&
-    inlet.ph <= 9.0 &&
-    (outlet.ph < 6.0 || outlet.ph > 9.0)
-  ) {
-    alerts.push({
-      level: "ANOMALY",
-      type: "unusual_pattern",
-      parameter: "ph",
-      message: `Inlet pH normal (${inlet.ph.toFixed(
-        1,
-      )}) tapi outlet di luar baku mutu (${outlet.ph.toFixed(
-        1,
-      )}) - Kemungkinan kontaminasi sekunder atau sistem buffer gagal`,
-      severity: "high",
-      priority: 2,
-      action_required: "Urgent inspection required (< 4 hours)",
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  // TDS outlet > inlet (contamination)
-  if (outlet.tds > inlet.tds * 1.1) {
-    alerts.push({
-      level: "ANOMALY",
-      type: "contamination_suspected",
-      parameter: "tds",
-      message: `TDS outlet (${outlet.tds}) lebih tinggi dari inlet (${inlet.tds}) - Kemungkinan kontaminasi sekunder`,
-      severity: "high",
-      priority: 2,
-      action_required: "Check for secondary contamination sources",
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  // 3. WARNING ALERTS (Low effectiveness)
-  if (effectivenessScore < 50) {
-    alerts.push({
-      level: "WARNING",
-      type: "low_effectiveness",
-      parameter: "overall",
-      message: `IPAL effectiveness rendah (${effectivenessScore}/100) - Performa di bawah standar`,
-      severity: "medium",
-      priority: 3,
-      action_required: "Action required within 24 hours",
-      details: {
-        tds_reduction: effectiveness.tds_reduction.toFixed(1) + "%",
-      },
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  // Individual parameter effectiveness warnings
-  if (effectiveness.tds_reduction < 20) {
-    alerts.push({
-      level: "WARNING",
-      type: "low_reduction",
-      parameter: "tds",
-      message: `TDS reduction sangat rendah (${effectiveness.tds_reduction.toFixed(
-        1,
-      )}%) - Filter mungkin tersumbat`,
-      severity: "medium",
-      priority: 3,
-      action_required: "Check filter system within 24 hours",
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  // 4. MAINTENANCE ALERTS (Borderline cases)
-  // pH borderline
-  if (
-    (outlet.ph > 8.5 && outlet.ph <= 9.0) ||
-    (outlet.ph < 6.5 && outlet.ph >= 6.0)
-  ) {
-    alerts.push({
-      level: "MAINTENANCE",
-      type: "borderline_parameter",
-      parameter: "ph",
-      message: `pH outlet mendekati batas (${outlet.ph.toFixed(
-        1,
-      )}) - Monitor ketat dan pertimbangkan adjustment`,
-      severity: "low",
-      priority: 4,
-      action_required: "Schedule maintenance check",
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  // TDS borderline
-  if (outlet.tds > 3500 && outlet.tds <= 4000) {
-    alerts.push({
-      level: "MAINTENANCE",
-      type: "borderline_parameter",
-      parameter: "tds",
-      message: `TDS outlet mendekati batas maksimum (${outlet.tds.toFixed(
-        0,
-      )} mg/L) - Filter maintenance mungkin diperlukan`,
-      severity: "low",
-      priority: 4,
-      action_required: "Plan filter cleaning/replacement",
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  // Temperature borderline
-  if (outlet.temperature > 38 && outlet.temperature <= 40) {
-    alerts.push({
-      level: "MAINTENANCE",
-      type: "borderline_parameter",
-      parameter: "temperature",
-      message: `Suhu outlet mendekati batas (${outlet.temperature.toFixed(
-        1,
-      )}°C) - Monitor sistem pendingin`,
-      severity: "low",
-      priority: 4,
-      action_required: "Check cooling system",
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  // 5. PERFORMANCE ALERTS (Moderate effectiveness)
-  if (effectivenessScore >= 50 && effectivenessScore < 70) {
-    alerts.push({
-      level: "PERFORMANCE",
-      type: "moderate_effectiveness",
-      parameter: "overall",
-      message: `IPAL effectiveness moderat (${effectivenessScore}/100) - Ada ruang untuk optimasi`,
-      severity: "low",
-      priority: 5,
-      action_required: "Review & optimize within 1 month",
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  // 6. INFO ALERTS (Good but informative)
-  if (outletScore >= 70 && effectivenessScore >= 70) {
-    alerts.push({
-      level: "INFO",
-      type: "system_normal",
-      parameter: "overall",
-      message: `Sistem beroperasi normal - Outlet score: ${outletScore}/100, Effectiveness: ${effectivenessScore}/100`,
-      severity: "info",
-      priority: 6,
-      action_required: "Continue routine monitoring",
-      timestamp: new Date().toISOString(),
-    });
-  }
-
-  // Sort by priority
-  return alerts.sort((a, b) => a.priority - b.priority);
-}
-
-/**
- * ========================================
- * RECOMMENDATIONS
- * ========================================
- */
-function generateRecommendations(alerts, effectiveness, compliance) {
-  const recommendations = [];
-
-  // Critical recommendations
-  if (!compliance.is_compliant) {
-    recommendations.push({
-      priority: "critical",
-      category: "compliance",
-      message: "IMMEDIATE: Stop discharge dan lakukan perbaikan sistem IPAL",
-      actions: [
-        "Isolasi outlet untuk mencegah pencemaran lingkungan",
-        "Identifikasi penyebab kegagalan treatment",
-        "Lakukan perbaikan sebelum melanjutkan operasi",
-      ],
-    });
-  }
-
-  // Effectiveness recommendations
-  if (effectiveness.tds_reduction < 30) {
-    recommendations.push({
-      priority: "high",
-      category: "maintenance",
-      message: "Periksa dan bersihkan sistem filtrasi TDS",
-      actions: [
-        "Cek tekanan filter - mungkin tersumbat",
-        "Lakukan backwash atau ganti media filter",
-        "Periksa membrane RO jika ada",
-        "Test kualitas chemical untuk regenerasi resin",
-      ],
-    });
-  }
-
-  // pH recommendations
-  if (
-    effectiveness.ph_change < 0.5 &&
-    compliance.violations.find((v) => v.parameter === "ph")
-  ) {
-    recommendations.push({
-      priority: "medium",
-      category: "treatment",
-      message: "Perbaiki sistem netralisasi pH",
-      actions: [
-        "Cek stok chemical buffer (NaOH/H2SO4)",
-        "Kalibrasi pH controller",
-        "Adjust dosing pump setting",
-        "Periksa mixing chamber",
-      ],
-    });
-  }
-
-  // Temperature recommendations
-  if (compliance.violations.find((v) => v.parameter === "temperature")) {
-    recommendations.push({
-      priority: "high",
-      category: "treatment",
-      message: "Perbaiki sistem pendingin air",
-      actions: [
-        "Periksa heat exchanger",
-        "Cek cooling tower operation",
-        "Monitor inlet temperature source",
-        "Evaluasi cooling capacity",
-      ],
-    });
-  }
-
-  // General maintenance
-  if (alerts.filter((a) => a.level === "MAINTENANCE").length > 0) {
-    recommendations.push({
-      priority: "medium",
-      category: "preventive",
-      message: "Scheduled maintenance diperlukan",
-      actions: [
-        "Lakukan maintenance rutin bulanan",
-        "Cek semua sensor dan kalibrasi",
-        "Inspect pompa dan motor",
-        "Review chemical consumption",
-      ],
-    });
-  }
-
-  // Optimization recommendations
-  if (effectiveness.tds_reduction >= 30 && compliance.is_compliant) {
-    recommendations.push({
-      priority: "low",
-      category: "optimization",
-      message: "Sistem bekerja baik - Pertimbangkan optimasi lebih lanjut",
-      actions: [
-        "Monitor trend jangka panjang",
-        "Identifikasi peak load patterns",
-        "Evaluasi efisiensi energi",
-        "Consider automation upgrade",
-      ],
-    });
-  }
-
-  return recommendations;
 }
 
 /**
@@ -800,8 +440,6 @@ module.exports = {
   inferEffectiveness,
   defuzzify,
   calculateReductionRates,
-  checkCompliance,
-  generateAlerts,
 
   // Helper functions
   gaussianMembership,
