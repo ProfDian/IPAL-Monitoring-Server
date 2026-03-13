@@ -124,11 +124,9 @@ app.get("/", (req, res) => {
 // ========================================
 // ⚡ Routes loaded on-demand to reduce cold start time
 
-// 1. Auth routes (lazy loaded)
-app.use("/auth", (req, res, next) => {
-  console.log("📦 Lazy loading authRoutes...");
-  require("./routes/authroutes")(req, res, next);
-});
+// 1. Auth routes (eager loaded to speed up first login path)
+const authRoutes = require("./routes/authroutes");
+app.use("/auth", authRoutes);
 
 // 2. Sensor routes (lazy loaded)
 app.use("/api/sensors", (req, res, next) => {
