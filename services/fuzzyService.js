@@ -147,11 +147,28 @@ function buildSensorHealthFromPreprocessed(preprocessed) {
       confidence_score: 100,
       faults: [],
       all_healthy: true,
+      data_reliability: preprocessed.data_reliability || {
+        is_reliable: true,
+        reason: null,
+      },
     };
   }
 
   const faults = [];
-  if (preprocessed.imputation_log) {
+  if (preprocessed?.faults?.details?.length) {
+    preprocessed.faults.details.forEach((fault) => {
+      faults.push({
+        sensor: `${fault.location}.${fault.parameter}`,
+        location: fault.location,
+        parameter: fault.parameter,
+        original_value: fault.value,
+        expected_range: fault.expected_range,
+        reason: fault.reason,
+        is_heavy_out_of_range: fault.is_heavy_out_of_range,
+        message: `Sensor ${fault.location}.${fault.parameter} bermasalah (${fault.reason})`,
+      });
+    });
+  } else if (preprocessed.imputation_log) {
     preprocessed.imputation_log.forEach((log) => {
       faults.push({
         sensor: `${log.location}.${log.parameter}`,
@@ -159,6 +176,7 @@ function buildSensorHealthFromPreprocessed(preprocessed) {
         parameter: log.parameter,
         original_value: log.original_value,
         replaced_with: log.imputed_value,
+        reason: log.reason || "unknown",
         message: `Sensor ${log.location}.${log.parameter} rusak`,
       });
     });
@@ -169,6 +187,12 @@ function buildSensorHealthFromPreprocessed(preprocessed) {
     confidence_score: preprocessed.confidence_score,
     faults,
     all_healthy: false,
+    data_reliability: preprocessed.data_reliability || {
+      is_reliable: !(preprocessed.should_skip_primary_scoring || false),
+      reason: preprocessed.should_skip_primary_scoring
+        ? "imputation_failed"
+        : null,
+    },
   };
 }
 
@@ -400,6 +424,18 @@ function generateRecommendations(
 ) {
   const recs = [];
 
+  if (sensorHealth?.data_reliability?.is_reliable === false) {
+    recs.push({
+      priority: "URGENT",
+      category: "DATA_QUALITY",
+      type: "sensor",
+      action:
+        "Data tidak reliabel. Analisis kualitas air utama ditahan sampai sensor kembali valid.",
+      message:
+        "Mode data_unreliable aktif. Periksa perangkat sensor sebelum mengambil keputusan kualitas air.",
+    });
+  }
+
   // Sensor faults - highest priority
   if (sensorHealth.count > 0) {
     recs.push({
@@ -408,6 +444,19 @@ function generateRecommendations(
       type: "sensor",
       action: `Perbaiki ${sensorHealth.count} sensor rusak segera`,
       message: `Perbaiki ${sensorHealth.count} sensor rusak segera`,
+    });
+
+    sensorHealth.faults.slice(0, 6).forEach((fault) => {
+      const rangeText = fault.expected_range
+        ? `${fault.expected_range.min}-${fault.expected_range.max}`
+        : "rentang valid";
+      recs.push({
+        priority: "HIGH",
+        category: "SENSOR",
+        type: "sensor",
+        action: `Periksa ${fault.sensor}: alasan ${fault.reason}, nilai ${fault.original_value}, rentang ${rangeText}`,
+        message: `Sensor ${fault.sensor} bermasalah (${fault.reason}).`,
+      });
     });
   }
 
@@ -485,6 +534,7 @@ function generateRecommendations(
 
   // All good
   if (
+    sensorHealth?.data_reliability?.is_reliable !== false &&
     outletScore.status === "excellent" &&
     effectiveness.effective &&
     violations.length === 0
@@ -551,25 +601,42 @@ async function analyze(inlet, outlet, ipalId) {
       preprocessed = {
         has_faults: sensorHealth.count > 0,
         confidence_score: sensorHealth.confidence_score,
+        should_skip_primary_scoring: false,
+        data_reliability: {
+          is_reliable: true,
+          reason: null,
+        },
       };
     }
+
+    const isDataReliable =
+      preprocessed?.data_reliability?.is_reliable !== false &&
+      !preprocessed?.should_skip_primary_scoring;
 
     // ===== STEP 2: Run Mamdani Engine — SISTEM 1 (PART 2) =====
     // Gaussian membership → 27 fuzzy rules (MIN-MAX) → Centroid defuzzification
     // → Dynamic weighting → quality_score + status
     let mamdaniResult;
 
-    try {
-      mamdaniResult = await mamdaniEngine.analyze(inlet, outlet);
-      console.log(
-        `   Mamdani Score: ${mamdaniResult.final_score}/100 (${mamdaniResult.overall_status})`,
-      );
-    } catch (mamdaniError) {
-      console.warn(
-        "⚠️ Mamdani engine failed, using simple scoring fallback:",
-        mamdaniError.message,
-      );
+    if (isDataReliable) {
+      try {
+        mamdaniResult = await mamdaniEngine.analyze(inlet, outlet);
+        console.log(
+          `   Mamdani Score: ${mamdaniResult.final_score}/100 (${mamdaniResult.overall_status})`,
+        );
+      } catch (mamdaniError) {
+        console.warn(
+          "⚠️ Mamdani engine failed, using simple scoring fallback:",
+          mamdaniError.message,
+        );
+        mamdaniResult = null;
+      }
+    } else {
       mamdaniResult = null;
+      console.warn(
+        "⚠️ Skipping primary scoring because data is unreliable:",
+        preprocessed?.data_reliability?.reason || "unknown",
+      );
     }
 
     // ===== STEP 3: Fallback scoring (PART 2 fallback) =====
@@ -592,7 +659,9 @@ async function analyze(inlet, outlet, ipalId) {
     // ===== STEP 6: Final Score =====
     // Use Mamdani score if available, adjusted by sensor confidence
     let finalScore;
-    if (mamdaniResult) {
+    if (!isDataReliable) {
+      finalScore = null;
+    } else if (mamdaniResult) {
       finalScore = preprocessed.has_faults
         ? Math.round(
             mamdaniResult.final_score * (preprocessed.confidence_score / 100),
@@ -607,15 +676,30 @@ async function analyze(inlet, outlet, ipalId) {
       );
     }
 
-    const status = getStatus(finalScore);
+    const status = isDataReliable ? getStatus(finalScore) : "data_unreliable";
+
+    const sensorFaultViolations = (sensorHealth.faults || []).map((fault) => ({
+      parameter: fault.parameter,
+      location: "anomaly",
+      value:
+        typeof fault.original_value === "number"
+          ? fault.original_value
+          : String(fault.original_value),
+      threshold: fault.expected_range
+        ? `${fault.expected_range.min}-${fault.expected_range.max}`
+        : "valid_number",
+      condition: fault.reason || "sensor_fault",
+      severity: fault.is_heavy_out_of_range ? "critical" : "high",
+      message: `Sensor ${fault.sensor} bermasalah (${fault.reason})`,
+    }));
 
     // ===== STEP 7: Build alerts =====
     // Simple alerts for backward compatibility
     const simpleAlerts = [
       ...sensorHealth.faults.map((f) => ({
         type: "SENSOR_FAULT",
-        priority: "medium",
-        level: "WARNING",
+        priority: f.is_heavy_out_of_range ? "critical" : "high",
+        level: f.is_heavy_out_of_range ? "CRITICAL" : "WARNING",
         message: f.message,
       })),
       ...effectiveness.issues.map((i) => ({
@@ -640,7 +724,9 @@ async function analyze(inlet, outlet, ipalId) {
 
     console.log("✅ Fuzzy analysis complete:");
     console.log(
-      `   Score: ${finalScore}/100 (${mamdaniResult ? "Mamdani" : "Simple"})`,
+      `   Score: ${
+        finalScore === null ? "N/A" : `${finalScore}/100`
+      } (${mamdaniResult ? "Mamdani" : "Simple"})`,
     );
     console.log(`   Status: ${status}`);
     console.log(`   Violations: ${violations.length}`);
@@ -654,15 +740,17 @@ async function analyze(inlet, outlet, ipalId) {
       status: status,
       final_score: finalScore,
       overall_status: status,
+      analysis_status: status,
       analysis_method: mamdaniResult
         ? "fuzzy_mamdani"
         : "simplified_fuzzy_logic",
 
       // --- Dari SISTEM 2 (Baku Mutu): violations + recommendations ---
       violations: violations, // Top-level for createAlertsForViolations
+      sensor_fault_violations: sensorFaultViolations,
       effectiveness_issues: effectiveness_issues,
       sensor_faults: sensor_faults,
-      alert_count: violations.length,
+      alert_count: violations.length + sensorFaultViolations.length,
       recommendations: recommendations,
 
       // --- Data input/output ---
@@ -674,14 +762,22 @@ async function analyze(inlet, outlet, ipalId) {
       fuzzy_analysis: mamdaniResult
         ? {
             outlet: {
-              score: mamdaniResult.outlet_analysis.score,
-              status: mamdaniResult.outlet_analysis.status,
+              score: isDataReliable
+                ? mamdaniResult.outlet_analysis.score
+                : null,
+              status: isDataReliable
+                ? mamdaniResult.outlet_analysis.status
+                : "data_unreliable",
               membership: mamdaniResult.outlet_analysis.fuzzy_membership,
               compliance: violations.length === 0,
             },
             effectiveness: {
-              score: mamdaniResult.effectiveness_analysis.score,
-              status: mamdaniResult.effectiveness_analysis.status,
+              score: isDataReliable
+                ? mamdaniResult.effectiveness_analysis.score
+                : null,
+              status: isDataReliable
+                ? mamdaniResult.effectiveness_analysis.status
+                : "data_unreliable",
               membership: mamdaniResult.effectiveness_analysis.fuzzy_membership,
               reduction_rates:
                 mamdaniResult.effectiveness_analysis.reduction_rates,
@@ -690,14 +786,14 @@ async function analyze(inlet, outlet, ipalId) {
           }
         : {
             outlet: {
-              score: outletScore.score,
-              status: outletScore.status,
+              score: isDataReliable ? outletScore.score : null,
+              status: isDataReliable ? outletScore.status : "data_unreliable",
               membership: outletScore.breakdown,
               compliance: violations.length === 0,
             },
             effectiveness: {
-              score: effectiveness.score,
-              status: effectiveness.status,
+              score: isDataReliable ? effectiveness.score : null,
+              status: isDataReliable ? effectiveness.status : "data_unreliable",
               membership: {},
               reduction_rates: effectiveness.reductions,
             },
@@ -731,9 +827,14 @@ async function analyze(inlet, outlet, ipalId) {
 
       // --- Compliance (SISTEM 2 summary) ---
       compliance: {
-        is_compliant: violations.length === 0,
+        is_compliant: isDataReliable && violations.length === 0,
         violations,
         standard: "Baku Mutu Pemerintah",
+      },
+
+      data_reliability: preprocessed?.data_reliability || {
+        is_reliable: isDataReliable,
+        reason: isDataReliable ? null : "unknown",
       },
 
       // --- Alerts ---
@@ -771,7 +872,7 @@ function formatAnalysisSummary(result) {
    • TDS: ≤4000 mg/L
    • Suhu: ≤40°C
 
-🎯 SKOR: ${result.quality_score}/100 (${result.status.toUpperCase()})
+🎯 SKOR: ${result.quality_score === null ? "N/A" : `${result.quality_score}/100`} (${result.status.toUpperCase()})
 
 🔥 INLET:  pH=${fmt(inp.ph, 2)} | TDS=${fmt(inp.tds)} | Temp=${fmt(inp.temperature)}
 🔤 OUTLET: pH=${fmt(out.ph, 2)} | TDS=${fmt(out.tds)} | Temp=${fmt(out.temperature)}

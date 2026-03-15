@@ -44,6 +44,10 @@ function assertExists(value, testName) {
   assert(value !== undefined && value !== null, testName, `got ${value}`);
 }
 
+function assertNull(value, testName) {
+  assert(value === null, testName, `got ${value}`);
+}
+
 // ========================================
 // TEST 1: IPAL OPTIMAL
 // ========================================
@@ -190,10 +194,18 @@ async function testSensorFault1() {
     { ph: 7.5, tds: 2200, temperature: 30 },
   );
 
-  // Should still produce a score
-  assertExists(r.quality_score, "quality_score exists despite fault");
-  assertType(r.quality_score, "number", "quality_score is number");
-  assertRange(r.quality_score, 0, 100, "quality_score in valid range");
+  // Should switch to data_unreliable (score withheld)
+  assertNull(r.quality_score, "quality_score is null when data_unreliable");
+  assert(
+    r.status === "data_unreliable",
+    "status is data_unreliable",
+    `got ${r.status}`,
+  );
+  assert(
+    r.data_reliability?.is_reliable === false,
+    "data_reliability marks false",
+  );
+  assertExists(r.data_reliability?.reason, "data_reliability.reason exists");
 
   // Sensor health should reflect fault
   assert(
@@ -209,10 +221,10 @@ async function testSensorFault1() {
     "advanced sensor imputation info exists",
   );
 
-  // Mamdani should still work
   assert(
-    r.analysis_method === "fuzzy_mamdani",
-    "Mamdani still works with 1 fault",
+    r.analysis_method === "simplified_fuzzy_logic",
+    "analysis method switches when primary scoring skipped",
+    `got ${r.analysis_method}`,
   );
 }
 
@@ -229,7 +241,12 @@ async function testSensorFaultMultiple() {
     { ph: 7.5, tds: null, temperature: 30 },
   );
 
-  assertExists(r.quality_score, "quality_score exists despite 3 faults");
+  assertNull(r.quality_score, "quality_score is null with 3 faults");
+  assert(
+    r.status === "data_unreliable",
+    "status is data_unreliable",
+    `got ${r.status}`,
+  );
   assert(
     r.sensor_health.count >= 3,
     "3+ sensor faults detected",
@@ -258,8 +275,12 @@ async function testAllSensorsDead() {
     { ph: null, tds: null, temperature: null },
   );
 
-  assertExists(r.quality_score, "quality_score exists even with all dead");
-  assertType(r.quality_score, "number", "quality_score is number");
+  assertNull(r.quality_score, "quality_score is null with all sensors dead");
+  assert(
+    r.status === "data_unreliable",
+    "status is data_unreliable for all dead sensors",
+    `got ${r.status}`,
+  );
   assert(
     r.sensor_health.count === 6,
     "6 sensor faults",
@@ -536,10 +557,20 @@ async function testExtremeValues() {
     { ph: 14.0, tds: 30000, temperature: 60 },
   );
 
-  assertExists(r.quality_score, "handles extreme values");
-  assertType(r.quality_score, "number", "quality_score is number");
-  assert(!isNaN(r.quality_score), "quality_score is not NaN");
-  assert(r.violations.length > 0, "extreme values create violations");
+  assertNull(r.quality_score, "extreme values set quality_score null");
+  assert(
+    r.status === "data_unreliable",
+    "extreme values trigger data_unreliable",
+    `got ${r.status}`,
+  );
+  assert(
+    r.data_reliability?.is_reliable === false,
+    "extreme values mark data unreliable",
+  );
+  assert(
+    r.sensor_fault_violations.length > 0,
+    "extreme values create sensor fault violations",
+  );
 }
 
 // ========================================

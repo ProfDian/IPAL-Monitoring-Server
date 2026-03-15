@@ -6,6 +6,18 @@
  * Includes: Fault detection, Firestore imputation
  */
 
+const SENSOR_RANGES = {
+  ph: { min: 0, max: 14 },
+  tds: { min: 0, max: 10000 },
+  temperature: { min: -10, max: 60 },
+};
+
+const HEAVY_OUT_OF_RANGE_LIMITS = {
+  ph: { min: -1, max: 15 },
+  tds: { min: -100, max: 12000 },
+  temperature: { min: -20, max: 80 },
+};
+
 /**
  * ========================================
  * SENSOR FAULT DETECTION
@@ -16,34 +28,87 @@ function detectSensorFaults(inlet, outlet) {
   const faults = {
     inlet: [],
     outlet: [],
+    details: [],
     count: 0,
+    has_heavy_out_of_range: false,
   };
 
   const parameters = ["ph", "tds", "temperature"];
 
+  const classifyFault = (value, param) => {
+    const numericValue = Number(value);
+
+    if (value === null || value === undefined) {
+      return {
+        reason: "missing_data",
+        isFault: true,
+        isHeavyOutOfRange: false,
+      };
+    }
+
+    if (Number.isNaN(numericValue)) {
+      return {
+        reason: "invalid_number",
+        isFault: true,
+        isHeavyOutOfRange: false,
+      };
+    }
+
+    const sensorRange = SENSOR_RANGES[param];
+    if (numericValue < sensorRange.min || numericValue > sensorRange.max) {
+      const heavyRange = HEAVY_OUT_OF_RANGE_LIMITS[param];
+      const isHeavyOutOfRange =
+        numericValue < heavyRange.min || numericValue > heavyRange.max;
+
+      return {
+        reason: "out_of_range",
+        isFault: true,
+        isHeavyOutOfRange,
+      };
+    }
+
+    return { reason: null, isFault: false, isHeavyOutOfRange: false };
+  };
+
   // Check inlet sensors
   parameters.forEach((param) => {
-    if (
-      inlet[param] === null ||
-      inlet[param] === undefined ||
-      isNaN(inlet[param]) ||
-      inlet[param] < 0
-    ) {
+    const value = inlet[param];
+    const faultInfo = classifyFault(value, param);
+    if (faultInfo.isFault) {
       faults.inlet.push(param);
       faults.count++;
+      faults.details.push({
+        location: "inlet",
+        parameter: param,
+        value,
+        reason: faultInfo.reason,
+        expected_range: SENSOR_RANGES[param],
+        is_heavy_out_of_range: faultInfo.isHeavyOutOfRange,
+      });
+      if (faultInfo.isHeavyOutOfRange) {
+        faults.has_heavy_out_of_range = true;
+      }
     }
   });
 
   // Check outlet sensors
   parameters.forEach((param) => {
-    if (
-      outlet[param] === null ||
-      outlet[param] === undefined ||
-      isNaN(outlet[param]) ||
-      outlet[param] < 0
-    ) {
+    const value = outlet[param];
+    const faultInfo = classifyFault(value, param);
+    if (faultInfo.isFault) {
       faults.outlet.push(param);
       faults.count++;
+      faults.details.push({
+        location: "outlet",
+        parameter: param,
+        value,
+        reason: faultInfo.reason,
+        expected_range: SENSOR_RANGES[param],
+        is_heavy_out_of_range: faultInfo.isHeavyOutOfRange,
+      });
+      if (faultInfo.isHeavyOutOfRange) {
+        faults.has_heavy_out_of_range = true;
+      }
     }
   });
 
@@ -88,33 +153,53 @@ function imputeFromLatest(inlet, outlet, faults, latestReading) {
   const imputedInlet = { ...inlet };
   const imputedOutlet = { ...outlet };
   const imputationLog = [];
+  const canImputeByKey = new Map(
+    (faults.details || []).map((fault) => [
+      `${fault.location}.${fault.parameter}`,
+      ["missing_data", "invalid_number", "out_of_range"].includes(fault.reason),
+    ]),
+  );
 
   // Impute inlet missing data
   faults.inlet.forEach((param) => {
+    if (!canImputeByKey.get(`inlet.${param}`)) {
+      return;
+    }
     const value = latestReading?.inlet?.[param];
     if (value != null) {
       imputedInlet[param] = value;
+      const faultDetail = (faults.details || []).find(
+        (fault) => fault.location === "inlet" && fault.parameter === param,
+      );
       imputationLog.push({
         location: "inlet",
         parameter: param,
         original_value: inlet[param],
         imputed_value: value,
         method: "latest_reading",
+        reason: faultDetail?.reason || "unknown",
       });
     }
   });
 
   // Impute outlet missing data
   faults.outlet.forEach((param) => {
+    if (!canImputeByKey.get(`outlet.${param}`)) {
+      return;
+    }
     const value = latestReading?.outlet?.[param];
     if (value != null) {
       imputedOutlet[param] = value;
+      const faultDetail = (faults.details || []).find(
+        (fault) => fault.location === "outlet" && fault.parameter === param,
+      );
       imputationLog.push({
         location: "outlet",
         parameter: param,
         original_value: outlet[param],
         imputed_value: value,
         method: "latest_reading",
+        reason: faultDetail?.reason || "unknown",
       });
     }
   });
@@ -174,18 +259,40 @@ async function preprocessSensorData(inlet, outlet, ipalId) {
   } = imputeFromLatest(inlet, outlet, faults, latestReading);
 
   // Check if all faults were resolved
-  const unresolvedInlet = faults.inlet.filter(
-    (p) =>
-      imputedInlet[p] === null ||
-      imputedInlet[p] === undefined ||
-      isNaN(imputedInlet[p]),
+  const isStillInvalid = (value, parameter) => {
+    const numericValue = Number(value);
+    if (value === null || value === undefined) return true;
+    if (Number.isNaN(numericValue)) return true;
+    const range = SENSOR_RANGES[parameter];
+    if (!range) return false;
+    return numericValue < range.min || numericValue > range.max;
+  };
+
+  const unresolvedInlet = faults.inlet.filter((parameter) =>
+    isStillInvalid(imputedInlet[parameter], parameter),
   );
-  const unresolvedOutlet = faults.outlet.filter(
-    (p) =>
-      imputedOutlet[p] === null ||
-      imputedOutlet[p] === undefined ||
-      isNaN(imputedOutlet[p]),
+  const unresolvedOutlet = faults.outlet.filter((parameter) =>
+    isStillInvalid(imputedOutlet[parameter], parameter),
   );
+
+  const unresolvedFaultDetails = (faults.details || []).filter((fault) => {
+    const value =
+      fault.location === "inlet"
+        ? imputedInlet[fault.parameter]
+        : imputedOutlet[fault.parameter];
+    return isStillInvalid(value, fault.parameter);
+  });
+
+  const hasFailedImputation = unresolvedFaultDetails.length > 0;
+  const shouldSkipPrimaryScoring =
+    faults.has_heavy_out_of_range || hasFailedImputation;
+
+  let reliabilityReason = null;
+  if (faults.has_heavy_out_of_range) {
+    reliabilityReason = "heavy_out_of_range";
+  } else if (hasFailedImputation) {
+    reliabilityReason = "imputation_failed";
+  }
   if (unresolvedInlet.length > 0 || unresolvedOutlet.length > 0) {
     console.warn(
       `⚠️ Could not impute: inlet=[${unresolvedInlet}] outlet=[${unresolvedOutlet}]`,
@@ -197,8 +304,12 @@ async function preprocessSensorData(inlet, outlet, ipalId) {
 
   console.log(`📊 Data imputation complete (Confidence: ${confidenceScore}%)`);
   imputation_log.forEach((log) => {
+    const formattedImputedValue =
+      typeof log.imputed_value === "number"
+        ? log.imputed_value.toFixed(2)
+        : String(log.imputed_value);
     console.log(
-      `   ${log.location}.${log.parameter}: ${log.original_value} → ${log.imputed_value.toFixed(2)} (${log.method})`,
+      `   ${log.location}.${log.parameter}: ${log.original_value} → ${formattedImputedValue} (${log.method})`,
     );
   });
 
@@ -207,8 +318,14 @@ async function preprocessSensorData(inlet, outlet, ipalId) {
     outlet: imputedOutlet,
     has_faults: true,
     faults,
+    unresolved_faults: unresolvedFaultDetails,
     imputation_log,
     confidence_score: confidenceScore,
+    should_skip_primary_scoring: shouldSkipPrimaryScoring,
+    data_reliability: {
+      is_reliable: !shouldSkipPrimaryScoring,
+      reason: reliabilityReason,
+    },
     sensor_status:
       faults.count >= 3
         ? "critical"

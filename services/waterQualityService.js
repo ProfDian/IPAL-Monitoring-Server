@@ -311,12 +311,25 @@ async function processCompleteReading(mergedData) {
     // ========================================
     let alertsCreated = [];
 
-    if (fuzzyResult.violations.length > 0) {
+    const thresholdViolations = Array.isArray(fuzzyResult.violations)
+      ? fuzzyResult.violations
+      : [];
+    const sensorFaultViolations = Array.isArray(
+      fuzzyResult.sensor_fault_violations,
+    )
+      ? fuzzyResult.sensor_fault_violations
+      : [];
+    const allAlertViolations = [
+      ...thresholdViolations,
+      ...sensorFaultViolations,
+    ];
+
+    if (allAlertViolations.length > 0) {
       console.log("🚨 Creating alerts...");
       alertsCreated = await createAlertsForViolations(
         readingId,
         ipal_id,
-        fuzzyResult.violations,
+        allAlertViolations,
       );
       console.log(`✅ Created ${alertsCreated.length} alert(s)`);
     } else {
@@ -389,6 +402,12 @@ async function createAlertsForViolations(readingId, ipalId, violations) {
     const alertsCreated = [];
 
     for (const violation of violations) {
+      const hasNumericValue =
+        typeof violation.value === "number" && Number.isFinite(violation.value);
+      const hasNumericThreshold =
+        typeof violation.threshold === "number" &&
+        Number.isFinite(violation.threshold);
+
       const alertData = {
         ipal_id: ipalId,
         reading_id: readingId,
@@ -396,7 +415,10 @@ async function createAlertsForViolations(readingId, ipalId, violations) {
         location: violation.location,
         value: violation.value,
         threshold: violation.threshold,
-        deviation: Math.abs(violation.value - violation.threshold),
+        deviation:
+          hasNumericValue && hasNumericThreshold
+            ? Math.abs(violation.value - violation.threshold)
+            : null,
         severity: violation.severity,
         status: "active",
         rule: `${violation.parameter} ${violation.condition}`,
@@ -497,6 +519,8 @@ async function sendNotificationsForAlerts(alerts) {
  */
 function validateReadingInput(data) {
   const errors = [];
+  const isFiniteNumber = (value) =>
+    typeof value === "number" && Number.isFinite(value);
 
   // Required fields
   if (!data.ipal_id) errors.push("ipal_id is required");
@@ -516,6 +540,21 @@ function validateReadingInput(data) {
       errors.push("data.tds is required");
     if (typeof data.data.temperature === "undefined")
       errors.push("data.temperature is required");
+    if (typeof data.data.ph !== "undefined" && !isFiniteNumber(data.data.ph)) {
+      errors.push("data.ph must be a finite number");
+    }
+    if (
+      typeof data.data.tds !== "undefined" &&
+      !isFiniteNumber(data.data.tds)
+    ) {
+      errors.push("data.tds must be a finite number");
+    }
+    if (
+      typeof data.data.temperature !== "undefined" &&
+      !isFiniteNumber(data.data.temperature)
+    ) {
+      errors.push("data.temperature must be a finite number");
+    }
   }
 
   return {
@@ -626,17 +665,16 @@ async function updateSensorsFromReading(
     console.log("🔧 Parsing sensor_mapping...");
     const sensorsToUpdate = [];
 
-    // Get current timestamp from reading document
     const { admin } = require("../config/firebase-config");
     const db = admin.firestore();
 
-    // Fetch the reading document to get its timestamp
     let timestamp;
     try {
       const readingDoc = await db
         .collection("water_quality_readings")
         .doc(readingId)
         .get();
+
       if (readingDoc.exists) {
         timestamp = readingDoc.data().timestamp;
         console.log(
@@ -651,12 +689,10 @@ async function updateSensorsFromReading(
       );
     }
 
-    // Fallback to server timestamp if reading not found
     if (!timestamp) {
       timestamp = admin.firestore.Timestamp.now();
     }
 
-    // Parse inlet sensors
     if (inlet) {
       const inletMapping = {
         inlet_ph: inlet.ph,
@@ -668,10 +704,10 @@ async function updateSensorsFromReading(
         const sensorId = sensor_mapping[key];
         if (sensorId && value !== null && value !== undefined) {
           sensorsToUpdate.push({
-            sensorId: sensorId,
+            sensorId,
             readingData: {
-              value: value,
-              timestamp: timestamp,
+              value,
+              timestamp,
               reading_id: readingId,
               status: qualityStatus || "normal",
             },
@@ -680,7 +716,6 @@ async function updateSensorsFromReading(
       }
     }
 
-    // Parse outlet sensors
     if (outlet) {
       const outletMapping = {
         outlet_ph: outlet.ph,
@@ -692,10 +727,10 @@ async function updateSensorsFromReading(
         const sensorId = sensor_mapping[key];
         if (sensorId && value !== null && value !== undefined) {
           sensorsToUpdate.push({
-            sensorId: sensorId,
+            sensorId,
             readingData: {
-              value: value,
-              timestamp: timestamp,
+              value,
+              timestamp,
               reading_id: readingId,
               status: qualityStatus || "normal",
             },
@@ -710,8 +745,6 @@ async function updateSensorsFromReading(
     }
 
     console.log(`📦 Updating ${sensorsToUpdate.length} sensor(s)...`);
-
-    // Batch update untuk efficiency
     const result =
       await getSensorModel().batchUpdateSensorsReading(sensorsToUpdate);
 
@@ -722,8 +755,6 @@ async function updateSensorsFromReading(
     return result;
   } catch (error) {
     console.error("❌ Error updating sensors from reading:", error);
-    // Don't throw - this should not block the main flow
-    // Sensor update is a secondary operation
   }
 }
 

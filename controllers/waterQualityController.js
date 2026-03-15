@@ -65,7 +65,13 @@ exports.submitReading = async (req, res) => {
     );
 
     // Validate required fields
-    if (!ipal_id || !location || !device_id || !data) {
+    if (
+      ipal_id === undefined ||
+      ipal_id === null ||
+      !location ||
+      !device_id ||
+      !data
+    ) {
       return res.status(400).json({
         success: false,
         message: "Missing required fields",
@@ -82,11 +88,78 @@ exports.submitReading = async (req, res) => {
     }
 
     // Validate data structure
-    if (!data.ph || !data.tds || !data.temperature) {
+    if (
+      typeof data.ph === "undefined" ||
+      typeof data.tds === "undefined" ||
+      typeof data.temperature === "undefined"
+    ) {
       return res.status(400).json({
         success: false,
         message: "Invalid data structure",
         required_fields: ["ph", "tds", "temperature"],
+      });
+    }
+
+    if (!Number.isInteger(ipal_id)) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid ipal_id",
+        errors: [
+          {
+            field: "ipal_id",
+            code: "TYPE_MISMATCH",
+            expected: "integer",
+            received: typeof ipal_id,
+          },
+        ],
+      });
+    }
+
+    if (typeof device_id !== "string" || device_id.trim() === "") {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid device_id",
+        errors: [
+          {
+            field: "device_id",
+            code: "TYPE_MISMATCH",
+            expected: "non-empty string",
+            received: typeof device_id,
+          },
+        ],
+      });
+    }
+
+    const sensorFields = ["ph", "tds", "temperature"];
+    const sensorErrors = sensorFields
+      .map((field) => {
+        const value = data[field];
+        const isFiniteNumber =
+          typeof value === "number" && Number.isFinite(value);
+
+        if (!isFiniteNumber) {
+          return {
+            field: `data.${field}`,
+            code: "TYPE_MISMATCH",
+            expected: "finite number",
+            received:
+              value === null
+                ? "null"
+                : Array.isArray(value)
+                  ? "array"
+                  : typeof value,
+          };
+        }
+
+        return null;
+      })
+      .filter(Boolean);
+
+    if (sensorErrors.length > 0) {
+      return res.status(400).json({
+        success: false,
+        message: "Invalid sensor payload",
+        errors: sensorErrors,
       });
     }
 
