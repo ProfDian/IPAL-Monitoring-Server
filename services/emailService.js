@@ -323,12 +323,20 @@ function generateAlertEmailHTML(alertData) {
               </span>
             </h4>
             <p><strong>📍 Lokasi:</strong> ${
-              v.location === "inlet" ? "Inlet (Masuk)" : "Outlet (Keluar)"
+              v.location === "inlet"
+                ? "Inlet (Masuk)"
+                : v.location === "outlet"
+                  ? "Outlet (Keluar)"
+                  : "Diagnostik Sensor"
             }</p>
             <p><strong>📊 Nilai:</strong> <span class="value-high">${
               typeof v.value === "number" ? v.value.toFixed(2) : v.value
             }</span></p>
-            <p><strong>⚖️ Batas Baku Mutu:</strong> ${v.threshold}</p>
+            <p><strong>⚖️ ${
+              v.location === "anomaly"
+                ? "Rentang Valid Sensor"
+                : "Batas Baku Mutu"
+            }:</strong> ${v.threshold}</p>
             <p style="color: #856404; margin-top: 10px;">
               <strong>💬 Detail:</strong> ${v.message}
             </p>
@@ -364,7 +372,11 @@ function generateAlertEmailHTML(alertData) {
           }
           ${
             alertData.threshold
-              ? `<tr><td>Batas Baku Mutu</td><td>${alertData.threshold}</td></tr>`
+              ? `<tr><td>${
+                  alertData.location === "anomaly"
+                    ? "Rentang Valid Sensor"
+                    : "Batas Baku Mutu"
+                }</td><td>${alertData.threshold}</td></tr>`
               : ""
           }
           ${
@@ -379,8 +391,9 @@ function generateAlertEmailHTML(alertData) {
       <div style="background-color: #e7f3ff; border-left: 4px solid #007bff; padding: 15px; margin: 20px 0;">
         <h4 style="margin-top: 0; color: #007bff;">📌 Tindakan yang Disarankan:</h4>
         <ul style="margin: 10px 0; padding-left: 20px;">
-          <li>Segera periksa sistem IPAL</li>
-          <li>Verifikasi pembacaan sensor</li>
+          <li>Segera verifikasi jenis kejadian (pelanggaran baku mutu atau anomali sensor)</li>
+          <li>Jika anomali sensor: periksa koneksi, kalibrasi, dan kesehatan perangkat</li>
+          <li>Jika pelanggaran baku mutu: periksa proses pengolahan IPAL</li>
           <li>Lakukan tindakan korektif sesuai SOP</li>
           <li>Dokumentasikan temuan dan tindakan</li>
         </ul>

@@ -233,6 +233,26 @@ function prepareEmailData(alerts) {
 
   // Get first alert for basic info
   const firstAlert = alerts[0];
+  const diagnosticAlerts = alerts.filter(
+    (alert) =>
+      alert.source === "sensor_diagnostic" || alert.location === "anomaly",
+  );
+  const complianceAlerts = alerts.filter(
+    (alert) =>
+      alert.source !== "sensor_diagnostic" && alert.location !== "anomaly",
+  );
+
+  let ruleTitle = `${alerts.length} Parameter Violations Detected`;
+  let summaryMessage = `Terdapat ${alerts.length} parameter yang melebihi baku mutu air limbah`;
+
+  if (diagnosticAlerts.length > 0 && complianceAlerts.length === 0) {
+    ruleTitle = `${alerts.length} Sensor Anomaly Detected`;
+    summaryMessage =
+      "Terdeteksi anomali pembacaan sensor. Periksa perangkat sebelum menggunakan hasil analisis kualitas air.";
+  } else if (diagnosticAlerts.length > 0 && complianceAlerts.length > 0) {
+    ruleTitle = `${alerts.length} Compliance & Sensor Alerts Detected`;
+    summaryMessage = `Terdapat ${complianceAlerts.length} pelanggaran baku mutu dan ${diagnosticAlerts.length} anomali sensor.`;
+  }
 
   // Combine all violations
   const allViolations = alerts.map((alert) => ({
@@ -248,11 +268,20 @@ function prepareEmailData(alerts) {
   return {
     ipal_id: firstAlert.ipal_id,
     reading_id: firstAlert.reading_id,
-    rule: `${alerts.length} Parameter Violations Detected`,
-    message: `Terdapat ${alerts.length} parameter yang melebihi baku mutu air limbah`,
+    rule: ruleTitle,
+    message: summaryMessage,
     severity: highestSeverity,
     parameter: "multiple", // Indicates multiple parameters
-    location: "outlet",
+    location:
+      diagnosticAlerts.length > 0 && complianceAlerts.length === 0
+        ? "anomaly"
+        : "outlet",
+    source:
+      diagnosticAlerts.length > 0 && complianceAlerts.length === 0
+        ? "sensor_diagnostic"
+        : complianceAlerts.length > 0 && diagnosticAlerts.length === 0
+          ? "compliance_threshold"
+          : "mixed",
     violations: allViolations, // ← Array of all violations
     timestamp: firstAlert.timestamp || new Date(),
 
@@ -300,14 +329,33 @@ async function sendFCMForAlerts(alerts, fcmTokens) {
  */
 function prepareFCMData(alerts) {
   const firstAlert = alerts[0];
+  const diagnosticAlerts = alerts.filter(
+    (alert) =>
+      alert.source === "sensor_diagnostic" || alert.location === "anomaly",
+  );
+  const complianceAlerts = alerts.filter(
+    (alert) =>
+      alert.source !== "sensor_diagnostic" && alert.location !== "anomaly",
+  );
+
+  let rule = `${alerts.length} Violations Detected`;
+  let message = `${alerts.length} parameter melebihi baku mutu: ${alerts
+    .map((a) => a.parameter.toUpperCase())
+    .join(", ")}`;
+
+  if (diagnosticAlerts.length > 0 && complianceAlerts.length === 0) {
+    rule = `${alerts.length} Sensor Anomaly Detected`;
+    message = `${diagnosticAlerts.length} anomali sensor terdeteksi. Cek perangkat sensor.`;
+  } else if (diagnosticAlerts.length > 0 && complianceAlerts.length > 0) {
+    rule = `${alerts.length} Compliance & Sensor Alerts`;
+    message = `${complianceAlerts.length} pelanggaran baku mutu + ${diagnosticAlerts.length} anomali sensor.`;
+  }
 
   return {
     id: firstAlert.alert_id || "multiple-alerts",
     ipal_id: firstAlert.ipal_id,
-    rule: `${alerts.length} Violations Detected`,
-    message: `${alerts.length} parameter melebihi baku mutu: ${alerts
-      .map((a) => a.parameter.toUpperCase())
-      .join(", ")}`,
+    rule,
+    message,
     severity: alerts.reduce((max, alert) => {
       const levels = { critical: 4, high: 3, medium: 2, low: 1 };
       return (levels[alert.severity] || 0) > (levels[max] || 0)
@@ -315,7 +363,16 @@ function prepareFCMData(alerts) {
         : max;
     }, "low"),
     parameter: "multiple",
-    location: "outlet",
+    location:
+      diagnosticAlerts.length > 0 && complianceAlerts.length === 0
+        ? "anomaly"
+        : "outlet",
+    source:
+      diagnosticAlerts.length > 0 && complianceAlerts.length === 0
+        ? "sensor_diagnostic"
+        : complianceAlerts.length > 0 && diagnosticAlerts.length === 0
+          ? "compliance_threshold"
+          : "mixed",
     timestamp: new Date(),
   };
 }

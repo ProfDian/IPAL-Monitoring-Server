@@ -82,6 +82,13 @@ function getStatus(score) {
 
 const determineStatus = getStatus; // Backward-compatible alias
 
+function formatFaultReason(reason) {
+  if (reason === "missing_data") return "data tidak tersedia";
+  if (reason === "invalid_number") return "format data tidak valid";
+  if (reason === "out_of_range") return "di luar rentang sensor";
+  return "anomali sensor";
+}
+
 // ╔══════════════════════════════════════╗
 // ║  PART 1: SENSOR PREPROCESSING       ║
 // ║  (sebelum data masuk ke sistem 1&2) ║
@@ -678,20 +685,32 @@ async function analyze(inlet, outlet, ipalId) {
 
     const status = isDataReliable ? getStatus(finalScore) : "data_unreliable";
 
-    const sensorFaultViolations = (sensorHealth.faults || []).map((fault) => ({
-      parameter: fault.parameter,
-      location: "anomaly",
-      value:
+    const sensorFaultViolations = (sensorHealth.faults || []).map((fault) => {
+      const valueText =
         typeof fault.original_value === "number"
-          ? fault.original_value
-          : String(fault.original_value),
-      threshold: fault.expected_range
+          ? fault.original_value.toFixed(2)
+          : String(fault.original_value);
+      const thresholdText = fault.expected_range
         ? `${fault.expected_range.min}-${fault.expected_range.max}`
-        : "valid_number",
-      condition: fault.reason || "sensor_fault",
-      severity: fault.is_heavy_out_of_range ? "critical" : "high",
-      message: `Sensor ${fault.sensor} bermasalah (${fault.reason})`,
-    }));
+        : "rentang sensor valid";
+      const reasonText = formatFaultReason(fault.reason);
+
+      return {
+        parameter: fault.parameter,
+        location: "anomaly",
+        value:
+          typeof fault.original_value === "number"
+            ? fault.original_value
+            : String(fault.original_value),
+        threshold: fault.expected_range
+          ? `${fault.expected_range.min}-${fault.expected_range.max}`
+          : "valid_number",
+        condition: fault.reason || "sensor_fault",
+        severity: fault.is_heavy_out_of_range ? "critical" : "high",
+        source: "sensor_diagnostic",
+        message: `Anomali sensor ${fault.sensor}: nilai ${valueText} (${reasonText}), rentang sensor ${thresholdText}.`,
+      };
+    });
 
     // ===== STEP 7: Build alerts =====
     // Simple alerts for backward compatibility

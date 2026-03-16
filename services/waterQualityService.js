@@ -413,6 +413,11 @@ async function createAlertsForViolations(readingId, ipalId, violations) {
         reading_id: readingId,
         parameter: violation.parameter,
         location: violation.location,
+        source: violation.source || "compliance_threshold",
+        alert_type:
+          violation.source === "sensor_diagnostic"
+            ? "SENSOR_ANOMALY"
+            : "COMPLIANCE_VIOLATION",
         value: violation.value,
         threshold: violation.threshold,
         deviation:
@@ -421,7 +426,10 @@ async function createAlertsForViolations(readingId, ipalId, violations) {
             : null,
         severity: violation.severity,
         status: "active",
-        rule: `${violation.parameter} ${violation.condition}`,
+        rule:
+          violation.source === "sensor_diagnostic"
+            ? `sensor.${violation.parameter} ${violation.condition}`
+            : `${violation.parameter} ${violation.condition}`,
         message: violation.message,
         // Note: created_at will be added by alertModel using serverTimestamp()
       };
